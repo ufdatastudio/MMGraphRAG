@@ -17,6 +17,8 @@ This diagram illustrates the comprehensive workflow of the MMGraphRAG pipeline.
 The project is based on modifying the nano-graphrag to support multimodal inputs (removing the community-related code). The image processing part uses YOLO and multimodal LLM to convert images into scene graphs. The fusion part then uses spectral clustering to select candidate entities, combining the textual knowledge graph and the image knowledge graph to construct a multimodal knowledge graph.
 
 Currently, the supported multimodal input formats are DOCX and PDF.
+And the Cross-Modal Entity Linking (CMEL) dataset we created is here.
+https://github.com/wanxueyao/CMEL-dataset
 
 <!-- GETTING STARTED -->
 ## Getting Started
