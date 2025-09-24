@@ -10,7 +10,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-![MMGraphRAG Pipeline Overview](https://github.com/wanxueyao/MMGraphRAG/blob/main/fig1.png)
+![MMGraphRAG Pipeline Overview](https://github.com/wanxueyao/MMGraphRAG/blob/main/fig.png)
 
 This diagram illustrates the comprehensive workflow of the MMGraphRAG pipeline.
 
