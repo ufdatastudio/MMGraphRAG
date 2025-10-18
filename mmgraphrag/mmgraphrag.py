@@ -11,7 +11,7 @@ os.environ['CACHE_PATH'] = cache_path
 from llm import model_if_cache
 from parameter import QueryParam
 
-# 返回类型是 asyncio.AbstractEventLoop，即事件循环对象。确保无论当前环境是否已经存在事件循环，都能返回一个有效的事件循环。
+# Return type is asyncio.AbstractEventLoop, the event loop object. Ensures that a valid event loop is returned regardless of whether one already exists in the current environment.
 def always_get_an_event_loop() -> asyncio.AbstractEventLoop:
     try:
         # If there is already an event loop, use it.
@@ -25,31 +25,31 @@ def always_get_an_event_loop() -> asyncio.AbstractEventLoop:
 
 @dataclass
 class MMGraphRAG:
-    # 表示工作目录的路径，默认是根据当前日期时间生成的目录
+    # Working directory path, default is a directory generated based on current date-time
     working_dir: str = field(
         default_factory=lambda: f"./mm_graphrag_output_{datetime.now().strftime('%Y-%m-%d-%H:%M:%S')}"
     )
-    # 实体提取最大“拾取”次数，也就是反复提取次数，默认不反复提取
+    # Entity extraction maximum "gleaning" count, i.e., repeated extraction count, default is no repeated extraction
     entity_extract_max_gleaning: int = 1
-    # 实体摘要最大token数
+    # Entity summary maximum tokens
     entity_summary_to_max_tokens: int = 500
 
-    # 为向量数据库存储类提供可选的参数字典
+    # Provide optional parameter dictionary for vector database storage class
     vector_db_storage_cls_kwargs: dict = field(default_factory=dict)
 
-    # LLM相关调用
+    # LLM related calls
     model_func: callable = model_if_cache
     model_max_token_size: int = 32768
 
-    # 批量大小，默认为32
+    # Batch size, default is 32
     embedding_batch_num: int = 32
 
-    # tiktoken使用的模型名字，默认为gpt-4o，多数模型可以通用
+    # Tiktoken model name, default is gpt-4o, most models are compatible
     tiktoken_model_name: str = "gpt-4o"
 
     # node embedding
     node_embedding_algorithm: str = "node2vec"
-    # 如果没有显式传入 node2vec_params，则会调用这个 lambda 函数，自动生成并赋值为这个默认的字典
+    # If node2vec_params is not explicitly passed in, this lambda function is called to automatically generate and assign this default dictionary
     node2vec_params: dict = field(
         default_factory=lambda: {
             "dimensions": 1536,
@@ -62,29 +62,29 @@ class MMGraphRAG:
         }
     )
 
-    # 用于比较查询结果质量的阈值
+    # Threshold for comparing query result quality
     query_better_than_threshold: float = 0.2
 
     query_mode: bool = False
-    # 载入文件方式，0代表docx文件，1代表pdf文件直接解析，2代表pdf2markdown方式解析
+    # File loading mode, 0 for docx files, 1 for direct PDF parsing, 2 for pdf2markdown parsing method
     input_mode: int = 2
 
     cache_path = cache_path
 
-    # 在对象初始化后调用此方法，主要作用为打印配置信息和根据配置进行一些设置调整
+    # This method is called after object initialization, its main purpose is to print configuration information and make adjustments based on configuration
     def __post_init__(self):
-        # 将对象的属性以键值对的形式打印出来，用于调试和日志记录
+        # Print object attributes as key-value pairs for debugging and logging
         _print_config = ",\n  ".join([f"{k} = {v}" for k, v in asdict(self).items()])
         logger.debug(f"GraphRAG init with param:\n\n  {_print_config}\n")
         global_config = asdict(self)
 
         global_config_path = os.path.join(cache_path,"global_config.csv")
-        # 将global_config字典保存到 CSV 文件
+        # Save global_config dictionary to CSV file
         with open(global_config_path, 'w', newline='') as file:
             for key, value in global_config.items():
                 file.write(f"{key},{value}\n")
         
-        # 确保工作目录存在，如果不存在则创建
+        # Ensure working directory exists, create if it doesn't
         if os.path.exists(self.working_dir):
             logger.info(f"Using existing working directory {self.working_dir}")
         else:
@@ -97,7 +97,7 @@ class MMGraphRAG:
         from text2graph import extract_entities_from_text
         from query import local_query
         
-        # 实例化类
+        # Instantiate classes
         if self.query_mode:
             self.localquery = local_query()
         else:
@@ -128,12 +128,12 @@ class MMGraphRAG:
         elif self.input_mode == 1:
             await self.ChunkingFunc_pdf.extract_text_and_images(path)
         elif self.input_mode == 2:
-            # 定义 kv_store_image_data.json 文件路径
+            # Define path to kv_store_image_data.json file
             kv_store_path = os.path.join(self.working_dir, "kv_store_image_data.json")
             if os.path.exists(kv_store_path):
                 with open(kv_store_path, "r", encoding="utf-8") as file:
                     content = json.load(file)
-                    # 判断 JSON 文件是否为空 {}
+                    # Check if JSON file is empty {}
                     if content == {}:
                         logger.info(f"{kv_store_path} exists but is empty. Proceeding with preprocess.")
                         await self.ChunkingFunc_pdf2md.extract_text_and_images(path)
@@ -151,11 +151,11 @@ class MMGraphRAG:
         with open(filepath2, 'r') as file:
             image_data = json.load(file)
         from fusion import fusion, create_EntityVDB
-        # 检查 image_data 是否为空字典
+        # Check if image_data is an empty dictionary
         if image_data:
             img_ids = list(image_data.keys())
             await fusion(img_ids)
         else:
-            print("没有提取出图片，跳过 fusion 操作")
+            print("No images extracted, skipping fusion operation")
             createvdb = create_EntityVDB()
             await createvdb.create_vdb()

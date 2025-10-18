@@ -1,4 +1,4 @@
-conda create -n mmgraphrag python=3.10
+conda create -n mmgraphrag  -y python=3.10
 conda activate mmgraphrag
 # mmgraphrag环境
 pip install openai

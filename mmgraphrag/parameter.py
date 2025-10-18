@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from sentence_transformers import SentenceTransformer
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 @dataclass
 class QueryParam:
     response_type: str = "Keep the responses as brief and accurate as possible. If you need to present information in a list format, use (1), (2), (3), etc., instead of numbered bullets like 1., 2., 3. "
@@ -13,7 +17,8 @@ class QueryParam:
 cache_path = './cache'
 
 embedding_model_dir = './cache/all-MiniLM-L6-v2'
-EMBED_MODEL = SentenceTransformer(embedding_model_dir, device="cpu")
+# EMBED_MODEL = SentenceTransformer(embedding_model_dir, device="cpu")
+EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
 # EMBED_MODEL = SentenceTransformer(embedding_model_dir, trust_remote_code=True, device="cuda:0")
 
 def encode(content):
@@ -24,9 +29,22 @@ def encode(content):
 """
 
 mineru_dir = "./example_input/mineru_result"
-API_KEY = "Come on, hand over your API key! No more hiding it away!"
-MODEL = "moonshot-v1-32k"
-URL = "https://api.moonshot.cn/v1"
-MM_API_KEY = "Alright, Sherlock, where’s the API key? Time to crack the case!"
-MM_MODEL = "qwen-vl-max"
-MM_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+import os
+
+# Read environment variables safely
+API_KEY = os.getenv("API_KEY")
+MODEL = os.getenv("MODEL", "moonshot-v1-32k")  # default value if not set
+URL = os.getenv("URL", "https://api.moonshot.cn/v1")
+
+MM_API_KEY = os.getenv("MM_API_KEY")
+MM_MODEL = os.getenv("MM_MODEL", "gpt-5-nano-2025-08-07")
+MM_URL = os.getenv("MM_URL", "https://api.openai.com/v1")
+
+# Optionally, check for required environment variables
+if not API_KEY:
+    raise EnvironmentError("Missing required environment variable: API_KEY")
+
+if not MM_API_KEY:
+    raise EnvironmentError("Missing required environment variable: MM_API_KEY")
+
+print("Configuration loaded successfully.")

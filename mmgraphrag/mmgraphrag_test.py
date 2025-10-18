@@ -1,7 +1,7 @@
 print('starting!d(^_^o)')
 
 import warnings
-# 忽略 FutureWarning
+# Ignore FutureWarning
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 from mmgraphrag import MMGraphRAG

@@ -30,27 +30,30 @@ from storage import (
 
 from llm import model_if_cache
 
-# 异步函数处理单个实体提取任务的结果
+# Async function to handle single entity extraction task result
 async def _handle_single_entity_extraction(
     record_attributes: list[str],
     chunk_key: str,
 ):
     """
-    处理单个实体提取任务。
+    Process single entity extraction task.
 
-    该函数负责验证并处理给定的实体记录属性，从中提取实体名称、类型和描述等信息，
-    并返回一个字典，包含这些信息以及实体的来源标识。
+    This function validates and processes given entity record attributes, extracting information
+    such as entity name, type, and description, and returns a dictionary containing this information
+    along with the entity's source identifier.
 
-    参数:
-    - record_attributes: 一个字符串列表，包含实体的属性信息。预期列表中至少有4个元素，
-      第一个元素为'entity'，标识这是一个实体记录。
-    - chunk_key: 一个字符串，表示实体信息来源的唯一标识。
+    Parameters:
+    - record_attributes: A list of strings containing entity attribute information. Expected to have
+      at least 4 elements, with the first element being 'entity', identifying this as an entity record.
+    - chunk_key: A string representing the unique identifier of the entity information source.
 
-    返回:
-    - 如果记录属性有效，返回一个字典，包含实体名称、类型、描述和来源标识。
-    - 如果记录属性无效（如元素数量不足或第一个元素不是'entity'），则返回None。
+    Returns:
+    - If record attributes are valid, returns a dictionary containing entity name, type, description,
+      and source identifier.
+    - If record attributes are invalid (insufficient elements or first element is not 'entity'),
+      returns None.
     """
-    # 检查record_attributes列表是否至少有4个元素，且第一个元素是否为'entity'
+    # Check if record_attributes list has at least 4 elements and first element is 'entity'
     if len(record_attributes) < 4 or record_attributes[0] != '"entity"':
         return None
     # add this record as a node in the G
@@ -73,42 +76,43 @@ async def _handle_entity_relation_summary(
     global_config: dict,
 ) -> str:
     """
-    根据全局配置处理实体和关系的描述并生成摘要。
+    Process entity and relationship descriptions and generate summaries based on global config.
 
-    参数:
-    - entity_or_relation_name: 实体或关系的名称。
-    - description: 实体或关系的描述。
-    - global_config: 包含模型、令牌大小、总结最大令牌数等的全局配置。
+    Parameters:
+    - entity_or_relation_name: Name of entity or relationship.
+    - description: Description of entity or relationship.
+    - global_config: Global configuration containing model, token size, summary max tokens, etc.
 
-    返回:
-    - 生成的摘要或原始描述。
+    Returns:
+    - Generated summary or original description.
     """
-    # 从全局配置中获取相应的函数和参数
+    # Get corresponding function and parameters from global config
     use_llm_func = model_if_cache
     llm_max_tokens = global_config["model_max_token_size"]
     tiktoken_model_name = global_config["tiktoken_model_name"]
     summary_max_tokens = global_config["entity_summary_to_max_tokens"]
-    # 编码描述信息
+    # Encode description information
     tokens = encode_string_by_tiktoken(description, model_name=tiktoken_model_name)
-    # 如果描述信息的令牌数小于最大摘要令牌数，则直接返回描述信息
+    # If description token count is less than max summary tokens, return description directly
     if len(tokens) < summary_max_tokens:  # No need for summary
         return description
-    # 设置prompt
+    # Set prompt
     prompt_template = PROMPTS["summarize_entity_descriptions"]
-    # 获取适合模型最大令牌数的描述信息
+    # Get description suitable for model max token count
     use_description = decode_tokens_by_tiktoken(
         tokens[:llm_max_tokens], model_name=tiktoken_model_name
     )
-    # 构建上下文基础信息
+    # Build context base information
     context_base = dict(
         entity_name=entity_or_relation_name,
         description_list=use_description.split(GRAPH_FIELD_SEP),
     )
-    # 构建最终的prompt
+    # Build final prompt
     user_prompt = prompt_template.format(**context_base)
     logger.debug(f"Trigger summary: {entity_or_relation_name}")
-    # 使用语言模型生成摘要
-    summary = await use_llm_func(user_prompt, max_tokens=summary_max_tokens)
+    # Use language model to generate summary
+    # summary = await use_llm_func(user_prompt, max_tokens=summary_max_tokens)
+    summary = await use_llm_func(user_prompt, max_completion_tokens=summary_max_tokens)
     return summary
 
 async def _handle_single_relationship_extraction(
@@ -140,34 +144,36 @@ async def _merge_nodes_then_upsert(
     global_config: dict,
 ):
     """
-    合并节点数据并更新或插入知识图谱中的节点。
+    Merge node data and update or insert nodes in the knowledge graph.
 
-    该函数首先尝试从知识图谱中获取已存在的节点信息，然后与新获取的节点数据进行合并。
-    合并后的节点数据将根据给定的规则更新或插入到知识图谱中。
+    This function first attempts to retrieve existing node information from the knowledge graph,
+    then merges it with newly acquired node data. The merged node data will be updated or inserted
+    into the knowledge graph according to given rules.
 
-    参数:
-    - entity_name (str): 实体名称，用于标识知识图谱中的节点。
-    - nodes_data (list[dict]): 一组节点数据，每个节点数据是一个字典。
-    - knwoledge_graph_inst (BaseGraphStorage): 知识图谱实例，用于操作知识图谱。
-    - global_config (dict): 全局配置信息，可能用于配置合并或处理节点数据的规则。
+    Parameters:
+    - entity_name (str): Entity name, used to identify nodes in the knowledge graph.
+    - nodes_data (list[dict]): A set of node data, where each node data is a dictionary.
+    - knwoledge_graph_inst (BaseGraphStorage): Knowledge graph instance for operating the knowledge graph.
+    - global_config (dict): Global configuration information, possibly used for configuring merge or
+                            processing rules for node data.
 
-    返回:
-    - node_data (dict): 更新或插入后的节点数据。
+    Returns:
+    - node_data (dict): Updated or inserted node data.
     """
-    # 初始化列表，用于存储已存在的节点信息
+    # Initialize lists to store existing node information
     already_entitiy_types = []
     already_source_ids = []
     already_description = []
-    # 从知识图谱中获取已存在的节点信息
+    # Get existing node information from knowledge graph
     already_node = await knwoledge_graph_inst.get_node(entity_name)
     if already_node is not None:
-        # 如果节点存在，则将已存在的信息添加到对应的列表中
+        # If node exists, add existing information to corresponding lists
         already_entitiy_types.append(already_node["entity_type"])
         already_source_ids.extend(
             split_string_by_multi_markers(already_node["source_id"], [GRAPH_FIELD_SEP])
         )
         already_description.append(already_node["description"])
-    # 合并新旧节点的实体类型，选择出现次数最多的作为新的实体类型
+    # Merge entity types of new and old nodes, select the most frequent one as new entity type
     entity_type = sorted(
         Counter(
             [dp["entity_type"] for dp in nodes_data] + already_entitiy_types
@@ -175,15 +181,15 @@ async def _merge_nodes_then_upsert(
         key=lambda x: x[1],
         reverse=True,
     )[0][0]
-    # 合并新旧节点的描述，使用分隔符连接所有不同的描述
+    # Merge descriptions of new and old nodes, connect all different descriptions using separator
     description = GRAPH_FIELD_SEP.join(
         sorted(set([dp["description"] for dp in nodes_data] + already_description))
     )
-    # 合并新旧节点的源ID，使用分隔符连接所有不同的源ID
+    # Merge source IDs of new and old nodes, connect all different source IDs using separator
     source_id = GRAPH_FIELD_SEP.join(
         set([dp["source_id"] for dp in nodes_data] + already_source_ids)
     )
-    # 处理实体的描述信息
+    # Process entity description information
     description = await _handle_entity_relation_summary(
         entity_name, description, global_config
     )
@@ -192,12 +198,12 @@ async def _merge_nodes_then_upsert(
         description=description,
         source_id=source_id,
     )
-    # 更新或插入节点到知识图谱
+    # Update or insert node into knowledge graph
     await knwoledge_graph_inst.upsert_node(
         entity_name,
         node_data=node_data,
     )
-    # 添加实体名称到节点数据中
+    # Add entity name to node data
     node_data["entity_name"] = entity_name
     return node_data
 
@@ -210,23 +216,24 @@ async def _merge_edges_then_upsert(
     global_config: dict,
 ):
     """
-    合并边数据并插入/更新知识图谱。
-    该函数检查src_id和tgt_id之间是否存在边，如果存在，则获取当前边数据并
-    与新的边数据(edges_data)合并；如果不存在，则直接插入新的边数据。同时，
-    如果src_id或tgt_id在图中不存在相应的节点，则插入默认属性的节点。
+    Merge edge data and insert/update knowledge graph.
+    This function checks if an edge exists between src_id and tgt_id. If it exists, retrieves
+    current edge data and merges it with new edge data (edges_data); if not, directly inserts
+    new edge data. Additionally, if src_id or tgt_id doesn't have corresponding nodes in the graph,
+    inserts nodes with default attributes.
 
-    参数:
-    - src_id (str): 边的起始节点ID。
-    - tgt_id (str): 边的目标节点ID。
-    - edges_data (list[dict]): 包含一个或多个边的数据。
-    - knwoledge_graph_inst (BaseGraphStorage): 知识图谱实例。
-    - global_config (dict): 全局配置。
+    Parameters:
+    - src_id (str): Starting node ID of the edge.
+    - tgt_id (str): Target node ID of the edge.
+    - edges_data (list[dict]): Contains data for one or more edges.
+    - knwoledge_graph_inst (BaseGraphStorage): Knowledge graph instance.
+    - global_config (dict): Global configuration.
     """
     already_weights = []
     already_source_ids = []
     already_description = []
     already_order = []
-    # 如果src_id和tgt_id之间存在边，则获取现有边数据
+    # If edge exists between src_id and tgt_id, get existing edge data
     if await knwoledge_graph_inst.has_edge(src_id, tgt_id):
         already_edge = await knwoledge_graph_inst.get_edge(src_id, tgt_id)
         already_weights.append(already_edge["weight"])
@@ -238,17 +245,17 @@ async def _merge_edges_then_upsert(
 
     # [numberchiffre]: `Relationship.order` is only returned from DSPy's predictions
     order = min([dp.get("order", 1) for dp in edges_data] + already_order)
-     # 计算总权重
+     # Calculate total weight
     weight = sum([dp["weight"] for dp in edges_data] + already_weights)
-     # 合并并去重描述，排序后转为字符串
+     # Merge and deduplicate descriptions, sort and convert to string
     description = GRAPH_FIELD_SEP.join(
         sorted(set([dp["description"] for dp in edges_data] + already_description))
     )
-    # 合并并去重源ID
+    # Merge and deduplicate source IDs
     source_id = GRAPH_FIELD_SEP.join(
         set([dp["source_id"] for dp in edges_data] + already_source_ids)
     )
-    # 确保src_id和tgt_id在图中存在节点，如果不存在则插入
+    # Ensure src_id and tgt_id have nodes in the graph, insert if they don't exist
     for need_insert_id in [src_id, tgt_id]:
         if not (await knwoledge_graph_inst.has_node(need_insert_id)):
             await knwoledge_graph_inst.upsert_node(
@@ -262,7 +269,7 @@ async def _merge_edges_then_upsert(
     description = await _handle_entity_relation_summary(
         (src_id, tgt_id), description, global_config
     )
-    # 插入/更新src_id和tgt_id之间的边
+    # Insert/update edge between src_id and tgt_id
     await knwoledge_graph_inst.upsert_edge(
         src_id,
         tgt_id,
@@ -278,30 +285,31 @@ async def extract_entities(
     global_config: dict,
 ) -> Union[BaseGraphStorage, None]:
     """
-    异步函数extract_entities从文本块中提取实体并更新知识图谱。
+    Async function extract_entities extracts entities from text chunks and updates knowledge graph.
 
-    参数:
-    chunks (dict[str, TextChunkSchema]): 文本块字典，键为文本块标识，值为包含文本块内容的TextChunkSchema对象。
-    knwoledge_graph_inst (BaseGraphStorage): 知识图谱实例，用于存储提取的实体和关系。
-    entity_vdb (BaseVectorStorage): 实体向量数据库实例，用于存储实体的向量表示。
-    global_config (dict): 全局配置字典，包含模型函数、最大迭代次数等参数。
+    Parameters:
+    chunks (dict[str, TextChunkSchema]): Text chunk dictionary, keys are text chunk identifiers,
+                                         values are TextChunkSchema objects containing text chunk content.
+    knwoledge_graph_inst (BaseGraphStorage): Knowledge graph instance for storing extracted entities and relationships.
+    entity_vdb (BaseVectorStorage): Entity vector database instance for storing vector representations of entities.
+    global_config (dict): Global configuration dictionary containing model functions, max iterations, and other parameters.
 
-    返回:
-    Union[BaseGraphStorage, None]: 更新后的知识图谱实例，如果没有提取到任何实体，则返回None。
+    Returns:
+    Union[BaseGraphStorage, None]: Updated knowledge graph instance, returns None if no entities extracted.
     """
-    # 用来存储每个chunk的实体和关系
+    # Store entities and relationships for each chunk
     output_json_path = f"{global_config['working_dir']}/kv_store_chunk_knowledge_graph.json"
 
     model_max_async: int = 16
-    # 限制模型函数的异步调用次数，并为其配置哈希键值存储
+    # Limit async call count for model function and configure hash key-value storage
     use_llm_func = limit_async_func_call(model_max_async)(
         partial(model_if_cache, hashing_kv=cache_dir)
     )
-    # 从全局配置中获取实体提取最大迭代次数
+    # Get entity extraction max gleaning iterations from global config
     entity_extract_max_gleaning = global_config["entity_extract_max_gleaning"]
-    # 将文本块排序，以便按顺序处理
+    # Sort text chunks for sequential processing
     ordered_chunks = list(chunks.items())
-    # 准备实体提取的提示模板和上下文基础信息
+    # Prepare entity extraction prompt template and context base information
     entity_extract_prompt = PROMPTS["entity_extraction"]
     context_base = dict(
         tuple_delimiter=PROMPTS["DEFAULT_TUPLE_DELIMITER"],
@@ -311,81 +319,81 @@ async def extract_entities(
     )
     continue_prompt = PROMPTS["entity_continue_extraction"]
     if_loop_prompt = PROMPTS["entity_if_loop_extraction"]
-    # 初始化计数器，用于统计已处理的文本块、已提取的实体和关系数量
+    # Initialize counters to track processed text chunks, extracted entities, and relationships
     already_processed = 0
     already_entities = 0
     already_relations = 0
-    # 实现一个全局的结果字典用于与json格式对应
+    # Implement a global result dictionary to correspond with json format
     chunk_knowledge_graph_info = {}
 
     async def _process_single_content(chunk_key_dp: tuple[str, TextChunkSchema]):
         """
-        异步函数_process_single_content处理单个文本块的内容，提取实体并更新知识图谱。
+        Async function _process_single_content processes content of a single text chunk, extracts entities and updates knowledge graph.
 
-        参数:
-        chunk_key_dp (tuple[str, TextChunkSchema]): 文本块的键值对，包含文本块标识和内容。
+        Parameters:
+        chunk_key_dp (tuple[str, TextChunkSchema]): Text chunk key-value pair containing text chunk identifier and content.
 
-        返回:
-        dict: 包含从文本块中提取的可能的节点和边的字典。
+        Returns:
+        dict: Dictionary containing possible nodes and edges extracted from text chunk.
         """
-        # 初始化非局部变量，用于跟踪处理进度和统计信息
+        # Initialize nonlocal variables for tracking processing progress and statistics
         nonlocal already_processed, already_entities, already_relations
-        # 解析文本块的键和数据
+        # Parse text chunk key and data
         chunk_key = chunk_key_dp[0]
         chunk_dp = chunk_key_dp[1]
         content = chunk_dp["content"]
         chunk_order_index = chunk_dp["chunk_order_index"]
-        # 构建提示信息并调用模型函数提取实体
+        # Build prompt and call model function to extract entities
         hint_prompt = entity_extract_prompt.format(**context_base, input_text=content)
         final_result = await use_llm_func(hint_prompt)
-        # 构建对话历史并进行多次迭代以提取更多实体
+        # Build conversation history and perform multiple iterations to extract more entities
         history = pack_user_ass_to_openai_messages(hint_prompt, final_result)
-        # 循环执行最多 entity_extract_max_gleaning 次，进行迭代提取
+        # Loop up to entity_extract_max_gleaning times for iterative extraction
         for now_glean_index in range(entity_extract_max_gleaning):
-            # 调用模型函数继续提取
+            # Call model function to continue extraction
             glean_result = await use_llm_func(continue_prompt, history_messages=history)
-            # 将新的结果添加到历史对话和最终结果中
+            # Add new results to conversation history and final results
             history += pack_user_ass_to_openai_messages(continue_prompt, glean_result)
             final_result += glean_result
-            # 检查是否继续迭代
+            # Check if should continue iteration
             if now_glean_index == entity_extract_max_gleaning - 1:
                 break
-            # 调用模型函数检查是否需要继续迭代提取
+            # Call model function to check if need to continue iterative extraction
             if_loop_result: str = await use_llm_func(
                 if_loop_prompt, history_messages=history
             )
-            # 解析模型的返回值，去掉多余的引号和空白，并转换为小写
+            # Parse model return value, remove extra quotes and whitespace, convert to lowercase
             if_loop_result = if_loop_result.strip().strip('"').strip("'").lower()
-            # 如果返回值不是 "yes"，则退出循环
+            # If return value is not "yes", exit loop
             if if_loop_result != "yes":
                 break
-        # 将最终提取的结果按照多个分隔符分割成记录
+        # Split final extracted results into records using multiple delimiters
         records = split_string_by_multi_markers(
             final_result,
             [context_base["record_delimiter"], context_base["completion_delimiter"]],
         )
-        # 使用 defaultdict 来存储可能的节点和边
+        # Use defaultdict to store possible nodes and edges
         maybe_nodes = defaultdict(list)
         maybe_edges = defaultdict(list)
 
-        # 为当前文本块初始化结果字典
+        # Initialize result dictionary for current text chunk
         chunk_results = {
             "chunk_key": chunk_key,
             "entities": [],
             "relationships": [],
         }
-        # 遍历每一条记录，处理节点和边的提取
+        # Traverse each record to extract nodes and edges
         for record in records:
-            # 使用正则表达式从记录中提取元组数据
+            # Use regex to extract tuple data from record
             record = re.search(r"\((.*)\)", record)
             if record is None:
                 continue
             record = record.group(1)
-            # 按照元组分隔符分割记录属性
+            # Split record attributes using tuple delimiter
             record_attributes = split_string_by_multi_markers(
                 record, [context_base["tuple_delimiter"]]
             )
-            # 处理实体提取
+            # Process entity extraction
             if_entities = await _handle_single_entity_extraction(
                 record_attributes, chunk_key
             )
@@ -393,7 +401,7 @@ async def extract_entities(
                 maybe_nodes[if_entities["entity_name"]].append(if_entities)
                 chunk_results["entities"].append(if_entities)
                 continue
-            # 处理关系提取
+            # Process relationship extraction
             if_relation = await _handle_single_relationship_extraction(
                 record_attributes, chunk_key
             )
@@ -402,7 +410,7 @@ async def extract_entities(
                     if_relation
                 )
                 chunk_results["relationships"].append(if_relation)
-        # 更新处理进度和统计信息
+        # Update processing progress and statistics
         already_processed += 1
         already_entities += len(maybe_nodes)
         already_relations += len(maybe_edges)
@@ -414,28 +422,29 @@ async def extract_entities(
             end="",
             flush=True,
         )
-        # 存储该文本块的结果
+        # Store results for this text chunk
+        # Store results for this text chunk
         chunk_knowledge_graph_info[chunk_order_index] = chunk_results
         return dict(maybe_nodes), dict(maybe_edges)
-    # 并发处理所有文本块
+    # Process all text chunks concurrently
     # use_llm_func is wrapped in ascynio.Semaphore, limiting max_async callings
     results = await asyncio.gather(
         *[_process_single_content(c) for c in ordered_chunks]
     )
     print()  # clear the progress bar
-    # 将知识图谱信息保存为 JSON 文件
+    # Save knowledge graph information as JSON file
     with open(output_json_path, 'w', encoding='utf-8') as json_file:
         json.dump(chunk_knowledge_graph_info, json_file, ensure_ascii=False, indent=4)
-    # 汇总所有可能的节点和边
+    # Aggregate all possible nodes and edges
     maybe_nodes = defaultdict(list)
     maybe_edges = defaultdict(list)
     for m_nodes, m_edges in results:
         for k, v in m_nodes.items():
             maybe_nodes[k].extend(v)
         for k, v in m_edges.items():
-            # 构建无向图时，按字典序排序边的节点
+            # When building undirected graph, sort edge nodes in dictionary order
             maybe_edges[tuple(sorted(k))].extend(v)
-    # 合并节点数据并更新知识图谱
+    # Merge node data and update knowledge graph
     all_entities_data = await asyncio.gather(
         *[
             _merge_nodes_then_upsert(k, v, knwoledge_graph_inst, global_config)
@@ -443,14 +452,14 @@ async def extract_entities(
         ]
     )
 
-    # 合并边数据并更新知识图谱
+    # Merge edge data and update knowledge graph
     await asyncio.gather(
         *[
             _merge_edges_then_upsert(k[0], k[1], v, knwoledge_graph_inst, global_config)
             for k, v in maybe_edges.items()
         ]
     )
-    # 如果没有提取到任何实体，发出警告并返回 None
+    # If no entities extracted, issue warning and return None
     if not len(all_entities_data):
         logger.warning("Didn't extract any entities, maybe your LLM is not working")
         return None
@@ -458,35 +467,35 @@ async def extract_entities(
 
 @dataclass
 class extract_entities_from_text:
-    # 实体提取函数
+    # Entity extraction function
     text_entity_extraction_func: callable = extract_entities
 
-    # 存储类型设置
-    # 键值存储，json，具体定义在storage.py
+    # Storage type settings
+    # Key-value storage, json, specifically defined in storage.py
     key_string_value_json_storage_cls: Type[BaseKVStorage] = JsonKVStorage
-    # 图数据库存储，默认为NetworkXStorage
+    # Graph database storage, defaults to NetworkXStorage
     graph_storage_cls: Type[BaseGraphStorage] = NetworkXStorage
 
     def __post_init__(self):
-        # 获取全局设置
+        # Get global settings
         cache_path = os.getenv('CACHE_PATH')
         global_config_path = os.path.join(cache_path,"global_config.csv")
         global_config = read_config_to_dict(global_config_path)
-        # 根据配置初始化LLM响应缓存
+        # Initialize LLM response cache according to config
         self.llm_response_cache = (
             self.key_string_value_json_storage_cls(
                 namespace="llm_response_cache", global_config=global_config
             )
         )
-        # 初始化图存储类实例，用于存储块实体关系图
+        # Initialize graph storage class instance for storing chunk entity relationship graph
         self.chunk_entity_relation_graph = self.graph_storage_cls(
             namespace="chunk_entity_relation", global_config=global_config
         )
     async def text_entity_extraction(self, inserting_chunks):
         try:
             # ---------- extract/summary entity and upsert to graph
-            # 提取新实体和关系，并更新到知识图谱中
-            # 获取全局设置
+            # Extract new entities and relationships, and update to knowledge graph
+            # Get global settings
             cache_path = os.getenv('CACHE_PATH')
             global_config_path = os.path.join(cache_path,"global_config.csv")
             global_config = read_config_to_dict(global_config_path)

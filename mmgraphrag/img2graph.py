@@ -40,21 +40,21 @@ async def _handle_single_entity_extraction(
     chunk_key: str,
 ):
     """
-    处理单个实体提取任务。
+    Handle single entity extraction task.
 
-    该函数负责验证并处理给定的实体记录属性，从中提取实体名称、类型和描述等信息，
-    并返回一个字典，包含这些信息以及实体的来源标识。
+    This function is responsible for validating and processing the given entity record attributes, extracting information such as entity name, type, and description,
+    and returning a dictionary containing this information along with the entity's source identifier.
 
-    参数:
-    - record_attributes: 一个字符串列表，包含实体的属性信息。预期列表中至少有4个元素，
-      第一个元素为'entity'，标识这是一个实体记录。
-    - chunk_key: 一个字符串，表示实体信息来源的唯一标识。
+    Parameters:
+    - record_attributes: A list of strings containing entity attribute information. The list is expected to have at least 4 elements,
+      with the first element being 'entity', identifying this as an entity record.
+    - chunk_key: A string representing the unique identifier of the source of the entity information.
 
-    返回:
-    - 如果记录属性有效，返回一个字典，包含实体名称、类型、描述和来源标识。
-    - 如果记录属性无效（如元素数量不足或第一个元素不是'entity'），则返回None。
+    Returns:
+    - If the record attributes are valid, returns a dictionary containing the entity name, type, description, and source identifier.
+    - If the record attributes are invalid (such as insufficient number of elements or the first element is not 'entity'), returns None.
     """
-    # 检查record_attributes列表是否至少有4个元素，且第一个元素是否为'entity'
+    # Check if the record_attributes list has at least 4 elements and if the first element is 'entity'
     if len(record_attributes) < 4 or record_attributes[0] != '"entity"':
         return None
     # add this record as a node in the G
@@ -77,42 +77,43 @@ async def _handle_entity_relation_summary(
     global_config: dict,
 ) -> str:
     """
-    根据全局配置处理实体和关系的描述并生成摘要。
+    Handle entity and relationship descriptions based on global configuration and generate summaries.
 
-    参数:
-    - entity_or_relation_name: 实体或关系的名称。
-    - description: 实体或关系的描述。
-    - global_config: 包含模型、令牌大小、总结最大令牌数等的全局配置。
+    Parameters:
+    - entity_or_relation_name: Name of the entity or relationship.
+    - description: Description of the entity or relationship.
+    - global_config: Global configuration containing model, token size, maximum summary tokens, etc.
 
-    返回:
-    - 生成的摘要或原始描述。
+    Returns:
+    - Generated summary or original description.
     """
-    # 从全局配置中获取相应的函数和参数
+    # Get corresponding functions and parameters from global configuration
     use_llm_func = model_if_cache
     llm_max_tokens = global_config["model_max_token_size"]
     tiktoken_model_name = global_config["tiktoken_model_name"]
     summary_max_tokens = global_config["entity_summary_to_max_tokens"]
-    # 编码描述信息
+    # Encode description information
     tokens = encode_string_by_tiktoken(description, model_name=tiktoken_model_name)
-    # 如果描述信息的令牌数小于最大摘要令牌数，则直接返回描述信息
+    # If the token count of the description is less than the maximum summary tokens, return the description directly
     if len(tokens) < summary_max_tokens:  # No need for summary
         return description
-    # 设置prompt
+    # Set prompt
     prompt_template = PROMPTS["summarize_entity_descriptions"]
-    # 获取适合模型最大令牌数的描述信息
+    # Get description suitable for model's maximum token count
     use_description = decode_tokens_by_tiktoken(
         tokens[:llm_max_tokens], model_name=tiktoken_model_name
     )
-    # 构建上下文基础信息
+    # Build context base information
     context_base = dict(
         entity_name=entity_or_relation_name,
         description_list=use_description.split(GRAPH_FIELD_SEP),
     )
-    # 构建最终的prompt
+    # Build final prompt
     user_prompt = prompt_template.format(**context_base)
     logger.debug(f"Trigger summary: {entity_or_relation_name}")
-    # 使用语言模型生成摘要
-    summary = await use_llm_func(user_prompt, max_tokens=summary_max_tokens)
+    # Use language model to generate summary
+    # summary = await use_llm_func(user_prompt, max_tokens=summary_max_tokens)
+    summary = await use_llm_func(user_prompt, max_completion_tokens=summary_max_tokens)
     return summary
 
 async def _handle_single_relationship_extraction(
@@ -144,34 +145,34 @@ async def _merge_nodes_then_upsert(
     global_config: dict,
 ):
     """
-    合并节点数据并更新或插入知识图谱中的节点。
+    Merge node data and update or insert nodes into the knowledge graph.
 
-    该函数首先尝试从知识图谱中获取已存在的节点信息，然后与新获取的节点数据进行合并。
-    合并后的节点数据将根据给定的规则更新或插入到知识图谱中。
+    This function first attempts to retrieve existing node information from the knowledge graph, then merges it with newly obtained node data.
+    The merged node data will be updated or inserted into the knowledge graph according to the given rules.
 
-    参数:
-    - entity_name (str): 实体名称，用于标识知识图谱中的节点。
-    - nodes_data (list[dict]): 一组节点数据，每个节点数据是一个字典。
-    - knwoledge_graph_inst (BaseGraphStorage): 知识图谱实例，用于操作知识图谱。
-    - global_config (dict): 全局配置信息，可能用于配置合并或处理节点数据的规则。
+    Parameters:
+    - entity_name (str): Entity name, used to identify nodes in the knowledge graph.
+    - nodes_data (list[dict]): A set of node data, each node data is a dictionary.
+    - knwoledge_graph_inst (BaseGraphStorage): Knowledge graph instance, used to operate the knowledge graph.
+    - global_config (dict): Global configuration information, may be used to configure rules for merging or processing node data.
 
-    返回:
-    - node_data (dict): 更新或插入后的节点数据。
+    Returns:
+    - node_data (dict): Node data after update or insertion.
     """
-    # 初始化列表，用于存储已存在的节点信息
+    # Initialize lists to store existing node information
     already_entitiy_types = []
     already_source_ids = []
     already_description = []
-    # 从知识图谱中获取已存在的节点信息
+    # Get existing node information from the knowledge graph
     already_node = await knwoledge_graph_inst.get_node(entity_name)
     if already_node is not None:
-        # 如果节点存在，则将已存在的信息添加到对应的列表中
+        # If the node exists, add the existing information to corresponding lists
         already_entitiy_types.append(already_node["entity_type"])
         already_source_ids.extend(
             split_string_by_multi_markers(already_node["source_id"], [GRAPH_FIELD_SEP])
         )
         already_description.append(already_node["description"])
-    # 合并新旧节点的实体类型，选择出现次数最多的作为新的实体类型
+    # Merge entity types from old and new nodes, select the most frequent as the new entity type
     entity_type = sorted(
         Counter(
             [dp["entity_type"] for dp in nodes_data] + already_entitiy_types
@@ -179,15 +180,15 @@ async def _merge_nodes_then_upsert(
         key=lambda x: x[1],
         reverse=True,
     )[0][0]
-    # 合并新旧节点的描述，使用分隔符连接所有不同的描述
+    # Merge descriptions from old and new nodes, connect all different descriptions with separator
     description = GRAPH_FIELD_SEP.join(
         sorted(set([dp["description"] for dp in nodes_data] + already_description))
     )
-    # 合并新旧节点的源ID，使用分隔符连接所有不同的源ID
+    # Merge source IDs from old and new nodes, connect all different source IDs with separator
     source_id = GRAPH_FIELD_SEP.join(
         set([dp["source_id"] for dp in nodes_data] + already_source_ids)
     )
-    # 处理实体的描述信息
+    # Process entity description information
     description = await _handle_entity_relation_summary(
         entity_name, description, global_config
     )
@@ -196,12 +197,12 @@ async def _merge_nodes_then_upsert(
         description=description,
         source_id=source_id,
     )
-    # 更新或插入节点到知识图谱
+    # Update or insert node to knowledge graph
     await knwoledge_graph_inst.upsert_node(
         entity_name,
         node_data=node_data,
     )
-    # 添加实体名称到节点数据中
+    # Add entity name to node data
     node_data["entity_name"] = entity_name
     return node_data
 
@@ -214,23 +215,23 @@ async def _merge_edges_then_upsert(
     global_config: dict,
 ):
     """
-    合并边数据并插入/更新知识图谱。
-    该函数检查src_id和tgt_id之间是否存在边，如果存在，则获取当前边数据并
-    与新的边数据(edges_data)合并；如果不存在，则直接插入新的边数据。同时，
-    如果src_id或tgt_id在图中不存在相应的节点，则插入默认属性的节点。
+    Merge edge data and insert/update knowledge graph.
+    This function checks if an edge exists between src_id and tgt_id. If it exists, get the current edge data and
+    merge it with new edge data (edges_data); if not, directly insert new edge data. Meanwhile,
+    if src_id or tgt_id does not have a corresponding node in the graph, insert a node with default attributes.
 
-    参数:
-    - src_id (str): 边的起始节点ID。
-    - tgt_id (str): 边的目标节点ID。
-    - edges_data (list[dict]): 包含一个或多个边的数据。
-    - knwoledge_graph_inst (BaseGraphStorage): 知识图谱实例。
-    - global_config (dict): 全局配置。
+    Parameters:
+    - src_id (str): Starting node ID of the edge.
+    - tgt_id (str): Target node ID of the edge.
+    - edges_data (list[dict]): Contains one or more edge data.
+    - knwoledge_graph_inst (BaseGraphStorage): Knowledge graph instance.
+    - global_config (dict): Global configuration.
     """
     already_weights = []
     already_source_ids = []
     already_description = []
     already_order = []
-    # 如果src_id和tgt_id之间存在边，则获取现有边数据
+    # If an edge exists between src_id and tgt_id, get existing edge data
     if await knwoledge_graph_inst.has_edge(src_id, tgt_id):
         already_edge = await knwoledge_graph_inst.get_edge(src_id, tgt_id)
         already_weights.append(already_edge["weight"])
@@ -242,17 +243,17 @@ async def _merge_edges_then_upsert(
 
     # [numberchiffre]: `Relationship.order` is only returned from DSPy's predictions
     order = min([dp.get("order", 1) for dp in edges_data] + already_order)
-     # 计算总权重
+     # Calculate total weight
     weight = sum([dp["weight"] for dp in edges_data] + already_weights)
-     # 合并并去重描述，排序后转为字符串
+     # Merge and deduplicate descriptions, sort and convert to string
     description = GRAPH_FIELD_SEP.join(
         sorted(set([dp["description"] for dp in edges_data] + already_description))
     )
-    # 合并并去重源ID
+    # Merge and deduplicate source IDs
     source_id = GRAPH_FIELD_SEP.join(
         set([dp["source_id"] for dp in edges_data] + already_source_ids)
     )
-    # 确保src_id和tgt_id在图中存在节点，如果不存在则插入
+    # Ensure src_id and tgt_id have nodes in the graph, insert if they don't exist
     for need_insert_id in [src_id, tgt_id]:
         if not (await knwoledge_graph_inst.has_node(need_insert_id)):
             await knwoledge_graph_inst.upsert_node(
@@ -266,7 +267,7 @@ async def _merge_edges_then_upsert(
     description = await _handle_entity_relation_summary(
         (src_id, tgt_id), description, global_config
     )
-    # 插入/更新src_id和tgt_id之间的边
+    # Insert/update edge between src_id and tgt_id
     await knwoledge_graph_inst.upsert_edge(
         src_id,
         tgt_id,
@@ -275,21 +276,21 @@ async def _merge_edges_then_upsert(
         ),
     )
 
-# 提取原始图像（单张）的特征块，并单独保存
+# Extract feature chunks from original image (single image) and save separately
 async def extract_feature_chunks(single_image_path):
     cache_path = os.getenv('CACHE_PATH')
-    # 获取全局设置
+    # Get global configuration
     global_config_path = os.path.join(cache_path,"global_config.csv")
     global_config = read_config_to_dict(global_config_path)
     
-    # 保存路径为feature_images文件夹下的原始图像名称
+    # Save path is under feature_images folder with original image name
     save_dir = f"{global_config['working_dir']}/images/{Path(single_image_path).stem}"
-    # 如果保存路径不存在，则创建
+    # Create save path if it doesn't exist
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
     path = os.path.join(global_config["working_dir"], 'kv_store_image_data.json')
-    # 加载image_data，根据image_path获取current_image_data
+    # Load image_data, get current_image_data based on image_path
     with open(path, 'r', encoding='utf-8') as file:
         image_data = json.load(file)
     segmentation = False
@@ -300,56 +301,56 @@ async def extract_feature_chunks(single_image_path):
     if not segmentation:
         return save_dir
     
-    # 加载模型，这里是官方提供的默认模型，效果一般
+    # Load model, this is the default official model with average performance
     yolo_path = os.path.join(cache_path,"yolov8n-seg.pt")
     model = YOLO(yolo_path)
-    # 执行预测
+    # Execute prediction
     results = model(single_image_path, device='cpu')
 
-    # 迭代检测结果，因为默认输出results的结果是列表
+    # Iterate detection results, as the default results output is a list
     for result in results:
-        # 拷贝原始图像
+        # Copy original image
         img = np.copy(result.orig_img)
-        # 获取图像的文件名
+        # Get image filename
         img_name = Path(result.path).stem
 
-        # 遍历检测到的目标轮廓 
+        # Traverse detected object contours
         for ci, c in enumerate(result):
-            # 获取目标类别
+            # Get object category
             label = c.names[c.boxes.cls.tolist().pop()]
 
-            # 创建一个与原图像大小相同的空白掩膜，用于存放目标的掩膜轮廓
+            # Create a blank mask same size as original image to store object's mask contour
             b_mask = np.zeros(img.shape[:2], np.uint8)
 
-            # 获取目标的轮廓信息，并将其转换为适合OpenCV处理的整数类型 
+            # Get object's contour information and convert to integer type suitable for OpenCV processing
             contour = c.masks.xy.pop().astype(np.int32).reshape(-1, 1, 2)
 
-            # 使用OpenCV绘制轮廓到掩膜中，填充轮廓区域
+            # Use OpenCV to draw contour on mask, filling the contour region
             _ = cv2.drawContours(b_mask, [contour], -1, (255, 255, 255), cv2.FILLED)
 
-            # 将原始图像与掩膜结合，形成带有黑色背景的分割结果
+            # Combine original image with mask to form segmentation result with black background
             mask3ch = cv2.cvtColor(b_mask, cv2.COLOR_GRAY2BGR)
             isolated = cv2.bitwise_and(mask3ch, img)
-            # 透明背景
+            # Transparent background
             # isolated = np.dstack([img, b_mask]) 
 
-            # 获取边界框信息，将孤立对象裁剪到其边界框内
+            # Get bounding box information, crop isolated object to its bounding box
             x1, y1, x2, y2 = c.boxes.xyxy[0].cpu().numpy().astype(np.int32)
             iso_crop = isolated[y1:y2, x1:x2]
 
-            # 创建完整的保存路径，包含保存目录、图片文件名、目标标签和序号
+            # Create complete save path, including save directory, image filename, object label and sequence number
             save_path = Path(save_dir) / f"{img_name}_{label}-{ci}.jpg"
 
-            # 将分割出的目标保存为JPG文件
+            # Save segmented object as JPG file
             _ = cv2.imwrite(str(save_path),iso_crop)
     return save_dir
 
 async def feature_image_entity_construction(feature_image_path,use_llm_func):
     entities = []
 
-    # 检查文件夹是否为空（没有 .jpg 图片）
+    # Check if folder is empty (no .jpg images)
     if not any(filename.lower().endswith('.jpg') for filename in os.listdir(feature_image_path)):
-        return entities  # 返回空列表
+        return entities  # Return empty list
 
     feature_prompt_user = PROMPTS["feature_image_description_user"]
     feature_prompt_system = PROMPTS["feature_image_description_system"]
@@ -358,24 +359,24 @@ async def feature_image_entity_construction(feature_image_path,use_llm_func):
     for filename in os.listdir(feature_image_path):
         if filename.lower().endswith('.jpg'):
             image_path = os.path.join(feature_image_path, filename)
-            # 打开图像并检查尺寸
+            # Open image and check dimensions
             with Image.open(image_path) as image:
                 width, height = image.size
             if width > 28 and height > 28:
-                # 读取并编码为 Base64
+                # Read and encode as Base64
                 with open(image_path, "rb") as image_file:
                     img_base64 = base64.b64encode(image_file.read()).decode('utf-8')
                 
-                # 调用 LLM 函数生成描述
+                # Call LLM function to generate description
                 description = await use_llm_func(
                     user_prompt=feature_prompt_user,
                     img_base=img_base64,
                     system_prompt=feature_prompt_system
                 )
                 
-                # 构建实体字符串
+                # Build entity string
                 entity = f'("entity"{tuple_delimiter}"{filename}"{tuple_delimiter}"img"{tuple_delimiter}"{description}"){record_delimiter}'
-                # 替换多余符号，确保格式为你期望的 <|> 分隔符格式
+                # Replace extra symbols to ensure format matches expected <|> separator format
                 entity = entity.replace("('", "(").replace("')", ")")
                 entities.append(entity.replace("\n", ""))
             else:
@@ -386,9 +387,9 @@ async def feature_image_entity_construction(feature_image_path,use_llm_func):
 async def feature_image_relationship_construction(feature_image_path,image_entities,use_llm_func):
     relationships = []
 
-    # 检查文件夹是否为空（没有 .jpg 图片）
+    # Check if folder is empty (no .jpg images)
     if not any(filename.lower().endswith('.jpg') for filename in os.listdir(feature_image_path)):
-        return relationships  # 返回空列表
+        return relationships  # Return empty list
 
     feature_prompt_user = PROMPTS["entity_alignment_user"]
     feature_prompt_system = PROMPTS["entity_alignment_system"]
@@ -441,16 +442,16 @@ async def extract_entities_from_image(single_image_path,use_llm_func):
     return result
 
 async def entity_of_original_image(image_path,result1,result2):
-    # 初始化为列表
+    # Initialize as list
     result4 = []
-    # 获取全局设置
+    # Get global configuration
     cache_path = os.getenv('CACHE_PATH')
     global_config_path = os.path.join(cache_path,"global_config.csv")
     global_config = read_config_to_dict(global_config_path)
     path = os.path.join(global_config["working_dir"], 'kv_store_image_data.json')
     tuple_delimiter=PROMPTS["DEFAULT_TUPLE_DELIMITER"]
     record_delimiter=PROMPTS["DEFAULT_RECORD_DELIMITER"]
-    # 加载image_data，根据image_path获取current_image_data
+    # Load image_data, get current_image_data based on image_path
     with open(path, 'r', encoding='utf-8') as file:
         image_data = json.load(file)
     for image_key, image_info in image_data.items():
@@ -458,24 +459,24 @@ async def entity_of_original_image(image_path,result1,result2):
             current_image_data = image_info
             filename = image_key
             break
-    # 根据current_image_data正则化为entity变量
+    # Normalize to entity variable based on current_image_data
     description = current_image_data["description"]
     entity = f'("entity"{tuple_delimiter}"{filename}"{tuple_delimiter}"ori_img"{tuple_delimiter}"{description}"){record_delimiter}'
-    # 替换多余符号，确保格式为你期望的 <|> 分隔符格式
+    # Replace extra symbols to ensure format matches expected <|> separator format
     entity = entity.replace("('", "(").replace("')", ")")
     result4.append(entity.replace("\n",""))
-    # 根据result1正则化relationship变量
+    # Normalize relationship variable based on result1
     entity_name_pattern = r'\"([^\"]+?\.jpg)\"'
     for entity_feature in result1:
         entity_name = re.findall(entity_name_pattern, entity_feature)[0]
         if entity_name:
-            relationship1 = f'("relationship"{tuple_delimiter}"{entity_name}"{tuple_delimiter}"{filename}"{tuple_delimiter}"{entity_name}是{filename}的图像特征块。"{tuple_delimiter}10){record_delimiter}'
+            relationship1 = f'("relationship"{tuple_delimiter}"{entity_name}"{tuple_delimiter}"{filename}"{tuple_delimiter}"{entity_name} is an image feature block of {filename}."{tuple_delimiter}10){record_delimiter}'
             result4.append(relationship1)
-    # 根据result2正则化relationship变量
+    # Normalize relationship variable based on result2
     entity_name_pattern2 = r'\"entity\"<\|>\"([^\"]+?)\"'
     entity_names = re.findall(entity_name_pattern2, result2)
     for entity_name2 in entity_names:
-        relationship2 = f'("relationship"{tuple_delimiter}"{entity_name2}"{tuple_delimiter}"{filename}"{tuple_delimiter}"{entity_name2}是从{filename}中提取的实体。"{tuple_delimiter}10){record_delimiter}'
+        relationship2 = f'("relationship"{tuple_delimiter}"{entity_name2}"{tuple_delimiter}"{filename}"{tuple_delimiter}"{entity_name2} is an entity extracted from {filename}."{tuple_delimiter}10){record_delimiter}'
         result4.append(relationship2)
     return result4
 
@@ -493,7 +494,7 @@ async def extract_entities(
     global_config: dict,
 ) -> Union[BaseGraphStorage, None]:
     model_max_async :int = 16
-    # 限制模型函数的异步调用次数，并为其配置哈希键值存储
+    # Limit async calls to model function and configure hashing key-value storage
     use_llm_func = limit_async_func_call(model_max_async)(
         partial(multimodel_if_cache, hashing_kv=cache_dir)
     )
@@ -512,33 +513,33 @@ async def extract_entities(
     result4 = await entity_of_original_image(image_path,result1,result2)
     final_result = "\n" + "\n".join(result1 + result3 + result4) + result2.strip()
 
-    # 将最终提取的结果按照多个分隔符分割成记录
+    # Split final extracted results into records using multiple separators
     records = split_string_by_multi_markers(
         final_result,
         [context_base["record_delimiter"], context_base["completion_delimiter"]],
     )
-    # 使用 defaultdict 来存储可能的节点和边
+    # Use defaultdict to store possible nodes and edges
     maybe_nodes = defaultdict(list)
     maybe_edges = defaultdict(list)
 
-    # 为当前图像初始化结果字典
+    # Initialize result dictionary for current image
     image_results = {
         "image_path": image_path,
         "entities": [],
         "relationships": [],
     }
-    # 遍历每一条记录，处理节点和边的提取
+    # Traverse each record to process node and edge extraction
     for record in records:
-        # 使用正则表达式从记录中提取元组数据
+        # Use regex to extract tuple data from record
         record = re.search(r"\((.*)\)", record)
         if record is None:
             continue
         record = record.group(1)
-        # 按照元组分隔符分割记录属性
+        # Split record attributes by tuple separator
         record_attributes = split_string_by_multi_markers(
             record, [context_base["tuple_delimiter"]]
         )
-        # 处理实体提取
+        # Handle entity extraction
         if_entities = await _handle_single_entity_extraction(
             record_attributes, image_path
         )
@@ -546,7 +547,7 @@ async def extract_entities(
             maybe_nodes[if_entities["entity_name"]].append(if_entities)
             image_results["entities"].append(if_entities)
             continue
-        # 处理关系提取
+        # Handle relationship extraction
         if_relation = await _handle_single_relationship_extraction(
             record_attributes, image_path
         )
@@ -560,23 +561,23 @@ async def extract_entities(
     for k, v in maybe_nodes.items():
         m_nodes[k].extend(v)
     for k, v in maybe_edges.items():
-        # 构建无向图时，按字典序排序边的节点
+        # When building undirected graph, sort edge nodes by lexicographic order
         m_edges[tuple(sorted(k))].extend(v)
-    # 合并节点数据并更新知识图谱
+    # Merge node data and update knowledge graph
     all_entities_data = await asyncio.gather(
         *[
             _merge_nodes_then_upsert(k, v, knwoledge_graph_inst, global_config)
             for k, v in m_nodes.items()
         ]
     )
-    # 合并边数据并更新知识图谱
+    # Merge edge data and update knowledge graph
     await asyncio.gather(
         *[
             _merge_edges_then_upsert(k[0], k[1], v, knwoledge_graph_inst, global_config)
             for k, v in m_edges.items()
         ]
     )
-    # 如果没有提取到任何实体，发出警告并返回 None
+    # If no entities were extracted, issue warning and return None
     if not len(all_entities_data):
         logger.warning("Didn't extract any entities, maybe your LLM is not working")
         return None
@@ -584,41 +585,41 @@ async def extract_entities(
 
 @dataclass
 class extract_entities_from_single_image:
-    # 实体提取函数
+    # Entity extraction function
     image_entity_extraction_func: callable = extract_entities
 
-    # 存储类型设置
-    # 键值存储，json，具体定义在storage.py
+    # Storage type settings
+    # Key-value storage, json format, defined in storage.py
     key_string_value_json_storage_cls: Type[BaseKVStorage] = JsonKVStorage
-    # 图数据库存储，默认为NetworkXStorage
+    # Graph database storage, default is NetworkXStorage
     graph_storage_cls: Type[BaseGraphStorage] = NetworkXStorage
 
     def __post_init__(self):
-        # 获取全局设置
+        # Get global configuration
         cache_path = os.getenv('CACHE_PATH')
         global_config_path = os.path.join(cache_path,"global_config.csv")
         global_config = read_config_to_dict(global_config_path)
 
-        # 根据配置初始化LLM响应缓存
+        # Initialize LLM response cache based on configuration
         self.multimodel_llm_response_cache = (
             self.key_string_value_json_storage_cls(
                 namespace="multimodel_llm_response_cache", global_config=global_config
             )
         )
-        # 初始化图存储类实例，用于存储块实体关系图
+        # Initialize graph storage class instance for storing chunk entity relation graph
         self.image_entity_relation_graph = self.graph_storage_cls(
             namespace="image_entity_relation", global_config=global_config
         )
     async def single_image_entity_extraction(self, image_path):
         try:
-            # 获取全局设置
+            # Get global configuration
             cache_path = os.getenv('CACHE_PATH')
             global_config_path = os.path.join(cache_path,"global_config.csv")
             global_config = read_config_to_dict(global_config_path)
-            # yolo图像分割
+            # YOLO image segmentation
             feature_image_path = await extract_feature_chunks(image_path)
             # ---------- extract/summary entity and upsert to graph
-            # 提取新实体和关系，并更新到知识图谱中
+            # Extract new entities and relationships, and update to knowledge graph
             logger.info("[Entity Extraction]...")
             maybe_new_kg = await self.image_entity_extraction_func(
                 self.multimodel_llm_response_cache,
@@ -645,19 +646,19 @@ class extract_entities_from_single_image:
         await asyncio.gather(*tasks)
 
 async def img2graph(image_path):
-    # 获取全局设置
+    # Get global configuration
     cache_path = os.getenv('CACHE_PATH')
     global_config_path = os.path.join(cache_path,"global_config.csv")
     global_config = read_config_to_dict(global_config_path)
-    # 获取目录下所有的 .jpg 文件
+    # Get all .jpg files in directory
     jpg_files = [f for f in os.listdir(image_path) if f.endswith('.jpg')]
-    # 完整路径
+    # Complete paths
     jpg_file_paths = [os.path.join(image_path, f) for f in jpg_files]
     for single_image_path in jpg_file_paths:
         extraction = extract_entities_from_single_image()
         if single_image_path.lower().endswith(('.jpg')):
             await extraction.single_image_entity_extraction(single_image_path)
-            # 保存路径为feature_images文件夹下的原始图像名称
+            # Save path is under feature_images folder with original image name
             destination_dir = f"{global_config['working_dir']}/images/{Path(single_image_path).stem}/graph_{Path(single_image_path).stem}_entity_relation.graphml"
             source = f"{global_config['working_dir']}/graph_image_entity_relation.graphml"
             shutil.move(source,destination_dir)

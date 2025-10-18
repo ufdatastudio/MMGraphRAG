@@ -32,7 +32,7 @@ from base import (
 )
 cache_path = os.getenv('CACHE_PATH')
 
-# 获取全局设置
+# Get global settings
 def get_image_data():
     global_config_path = os.path.join(cache_path,"global_config.csv")
     global_config = read_config_to_dict(global_config_path)
@@ -61,15 +61,15 @@ def get_text_chunks():
     return text_chunks
 
 def extract_entities_from_graph(graphml_file: str) -> list[dict]:
-    # 加载GraphML文件
+    # Load GraphML file
     graph = nx.read_graphml(graphml_file)
     
-    # 存储所有实体节点的列表
+    # Store list of all entity nodes
     entity_list = []
     
-    # 遍历图中的每个节点，提取所需的数据
+    # Traverse each node in the graph to extract required data
     for node_id, node_data in graph.nodes(data=True):
-        # 提取实体信息
+        # Extract entity information
         entity_info = {
             "entity_type": node_data.get('entity_type', 'UNKNOWN'),
             "description": node_data.get('description', ''),
@@ -77,30 +77,30 @@ def extract_entities_from_graph(graphml_file: str) -> list[dict]:
             "entity_name": node_id
         }
         
-        # 将实体信息加入到列表中
+        # Add entity information to list
         entity_list.append(entity_info)
     
     return entity_list
 
 @dataclass
 class create_EntityVDB:
-    # 默认使用本地embedding
+    # Default to using local embedding
     embedding_func: EmbeddingFunc = field(default_factory=lambda: local_embedding)
-    # 最大并发请求数量
+    # Maximum number of concurrent requests
     embedding_func_max_async: int = 16
     
-    # 向量数据库存储,具体定义在storage.py
+    # Vector database storage, specifically defined in storage.py
     vector_db_storage_cls: Type[BaseVectorStorage] = NanoVectorDBStorage
 
 
     def __post_init__(self):
         global_config_path = os.path.join(cache_path,"global_config.csv")
         global_config = read_config_to_dict(global_config_path)
-        # 限制embedding函数的异步调用次数
+        # Limit async call count for embedding function
         self.embedding_func = limit_async_func_call(self.embedding_func_max_async)(
             self.embedding_func
         )
-        # 根据配置初始化向量数据库存储类实例，用于存储实体
+        # Initialize vector database storage class instance according to configuration for storing entities
         self.entities_vdb = (
             self.vector_db_storage_cls(
                 namespace="entities",
@@ -115,9 +115,9 @@ class create_EntityVDB:
         working_dir = global_config['working_dir']
         _, graph_file = get_latest_graphml_file(working_dir)
         all_entities_data = extract_entities_from_graph(graph_file)
-        # 如果实体向量数据库不为空，则将提取到的实体存储到向量数据库中
+        # If entity vector database is not empty, store extracted entities into the vector database
         if self.entities_vdb is not None:
-            # 将实体数据构造成向量数据库格式
+            # Construct entity data into vector database format
             data_for_vdb = {
                 compute_mdhash_id(dp["entity_name"], prefix="ent-"): {
                     "content": dp["entity_name"] + dp["description"],
@@ -125,7 +125,7 @@ class create_EntityVDB:
                 }
                 for dp in all_entities_data
             }
-            # 将数据插入到向量数据库中
+            # Insert data into vector database
             await self.entities_vdb.upsert(data_for_vdb)
         return await self._create_vdb_done()
     async def _create_vdb_done(self):
@@ -139,9 +139,9 @@ class create_EntityVDB:
         await asyncio.gather(*tasks)
 
 def get_nearby_chunks(data, index):
-    # 获取前后两个数字的范围
-    start_index = max(0, index - 1)  # 如果是0，则只取0和1
-    end_index = min(len(data) - 1, index + 1)  # 如果是最后一个数字，则只取自己和前一个
+    # Get the range of two numbers before and after
+    start_index = max(0, index - 1)  # If 0, only take 0 and 1
+    end_index = min(len(data) - 1, index + 1)  # If it's the last number, only take itself and the previous one
     
     all_index = list(range(start_index, end_index + 1))
     nearby_chunks = []
@@ -151,29 +151,29 @@ def get_nearby_chunks(data, index):
     return nearby_chunks
 
 def get_nearby_entities(data, index):
-        # 获取前后两个数字的范围
-        start_index = max(0, index - 1)  # 如果是0，则只取0和1
-        end_index = min(len(data) - 1, index + 1)  # 如果是最后一个数字，则只取自己和前一个
+        # Get the range of two numbers before and after
+        start_index = max(0, index - 1)  # If 0, only take 0 and 1
+        end_index = min(len(data) - 1, index + 1)  # If it's the last number, only take itself and the previous one
         
-        # 提取指定范围的entities
+        # Extract entities in specified range
         entities = []
         for i in range(start_index, end_index + 1):
             entities.extend(data.get(str(i), {}).get("entities", []))
-        # 去掉每个实体的 source_id
+        # Remove source_id from each entity
         for entity in entities:
             entity.pop("source_id", None)
         return entities
 
 def get_nearby_relationships(data, index):
-        # 获取前后两个数字的范围
-        start_index = max(0, index - 1)  # 如果是0，则只取0和1
-        end_index = min(len(data) - 1, index + 1)  # 如果是最后一个数字，则只取自己和前一个
+        # Get the range of two numbers before and after
+        start_index = max(0, index - 1)  # If 0, only take 0 and 1
+        end_index = min(len(data) - 1, index + 1)  # If it's the last number, only take itself and the previous one
         
-        # 提取指定范围的relationships
+        # Extract relationships in specified range
         relationships = []
         for i in range(start_index, end_index + 1):
             relationships.extend(data.get(str(i), {}).get("relationships", []))
-        # 去掉每个关系的 source_id
+        # Remove source_id from each relationship
         for relationship in relationships:
             relationship.pop("source_id", None)
         return relationships
@@ -200,21 +200,21 @@ def judge_image_entity_alignment(image_entity_name, image_entity_description, po
 def get_possible_entities_image_clustering(
     image_entity_description, nearby_text_entity_list, nearby_relationship_list
 ):
-    # Step 0: 排序关系列表，根据权重降序
+    # Step 0: Sort relationship list by weight in descending order
     nearby_relationship_list = sorted(nearby_relationship_list, key=lambda x: x['weight'], reverse=True)
     
-    # Step 1: 获取所有实体描述的嵌入
+    # Step 1: Get embeddings of all entity descriptions
     descriptions = [entity["description"] for entity in nearby_text_entity_list]
     entity_names = [entity["entity_name"] for entity in nearby_text_entity_list]
     embeddings = encode(descriptions)
 
-    # Step 2: spectral聚类
-    # 计算相似度矩阵（余弦相似度）
+    # Step 2: Spectral clustering
+    # Compute similarity matrix (cosine similarity)
     similarity_matrix = cosine_similarity(embeddings)
 
-    # 根据关系权重修改度矩阵
+    # Modify degree matrix based on relationship weights
     for relation in nearby_relationship_list:
-        # 只有当 src_id 和 tgt_id 都在 entity_names 中时才执行
+        # Only execute when both src_id and tgt_id are in entity_names
         if relation["src_id"] in entity_names and relation["tgt_id"] in entity_names:
             src_idx = entity_names.index(relation["src_id"])
             tgt_idx = entity_names.index(relation["tgt_id"])
@@ -223,50 +223,50 @@ def get_possible_entities_image_clustering(
 
         weight = relation["weight"]
         similarity_matrix[src_idx, tgt_idx] *= weight
-        similarity_matrix[tgt_idx, src_idx] *= weight  # 确保邻接矩阵是对称的
+        similarity_matrix[tgt_idx, src_idx] *= weight  # Ensure adjacency matrix is symmetric
     
-    # 计算度矩阵
+    # Compute degree matrix
     degree_matrix = np.zeros_like(similarity_matrix)
     for i in range(len(similarity_matrix)):
         degree_matrix[i, i] = np.sum(similarity_matrix[i, :])
 
-    # 计算拉普拉斯矩阵 L = D - A
+    # Compute Laplacian matrix L = D - A
     laplacian_matrix = degree_matrix - similarity_matrix
 
-    # 计算拉普拉斯矩阵的特征值和特征向量
+    # Compute eigenvalues and eigenvectors of Laplacian matrix
     eigvals, eigvecs = np.linalg.eig(laplacian_matrix)
 
-    # 选择前k个最小的特征值对应的特征向量
+    # Select eigenvectors corresponding to the k smallest eigenvalues
     k = max(2, math.ceil(math.sqrt(len(nearby_text_entity_list))))
     eigvecs_selected = eigvecs[:, np.argsort(eigvals)[:k]]
-    # 前面拉普拉斯矩阵可能出现非实对称矩阵的情况导致出现复数，所以这里加一步取模值
+    # The Laplacian matrix may result in non-real symmetric matrix producing complex numbers, so take absolute value
     eigvecs_selected = np.abs(eigvecs_selected)
 
-    # 使用 DBSCAN 聚类
+    # Use DBSCAN clustering
     min_samples = max(1, math.ceil(len(nearby_text_entity_list) / 10))
-    dbscan = DBSCAN(eps=0.5, min_samples=min_samples)  # 调整 eps 和 min_samples 参数
+    dbscan = DBSCAN(eps=0.5, min_samples=min_samples)  # Adjust eps and min_samples parameters
     dbscan_labels = dbscan.fit_predict(eigvecs_selected)
 
-    # 输出每个节点的聚类标签
+    # Output clustering label for each node
     labels = dbscan_labels
 
-    # 按照 nearby_text_entity_list 的顺序输出 labels
+    # Output labels in the order of nearby_text_entity_list
     labels = [labels[entity_names.index(entity["entity_name"])] for entity in nearby_text_entity_list]
 
-    # Step 3: 判断输入描述的类别
+    # Step 3: Determine category of input description
     input_embedding = encode([image_entity_description])
-    # 检查训练数据的样本数量
+    # Check number of samples in training data
     n_samples_fit = embeddings.shape[0]
-    # 设置 n_neighbors，确保它不会超过训练数据的样本数量
+    # Set n_neighbors, ensuring it doesn't exceed the number of samples in training data
     n_neighbors = min(3, n_samples_fit)
-    # 找到最近邻并使用 Pagerank,Leiden或Spectral的标签
+    # Find nearest neighbors and use labels from Pagerank, Leiden or Spectral
     nn = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine").fit(embeddings)
-    # 找到最近邻并使用 Pagerank,Leiden或Spectral的标签
+    # Find nearest neighbors and use labels from Pagerank, Leiden or Spectral
     nn = NearestNeighbors(n_neighbors=3, metric="cosine").fit(embeddings)
     _, nearest_idx = nn.kneighbors(input_embedding)
     target_label = labels[nearest_idx[0][0]]
 
-    # Step 4: 输出属于该类别的所有实体信息
+    # Step 4: Output all entity information belonging to this category
     result_entities = [
         entity
         for entity, label in zip(nearby_text_entity_list, labels)
@@ -279,34 +279,34 @@ def get_possible_entities_text_clustering(
    filtered_image_entity_list, nearby_text_entity_list, nearby_relationship_list
 ):
     """
-    聚类和分类函数，支持 KMeans/DBSCAN/Pagerank/Leiden 聚类及 KNN/LLM 分类。
+    Clustering and classification function supporting KMeans/DBSCAN/Pagerank/Leiden clustering and KNN/LLM classification.
 
     Parameters:
-        clustering_method (str): 聚类方法 ("KMeans", "DBSCAN", "Pagerank", 或 "Leiden")。
-        classify_method (str): 分类方法 ("knn" 或 "llm")。
-        filtered_image_entity_list (list): 过滤后的图像实体列表，每个实体包含 "entity_name" 和 "description"。
-        nearby_text_entity_list (list): 附近文本实体列表，每个实体包含 "entity_name"、"entity_type" 和 "description"。
-        nearby_relationship_list (list): 实体之间的关系列表，每个关系包含 "src_id"、"tgt_id"、"weight" 和 "description"。
+        clustering_method (str): Clustering method ("KMeans", "DBSCAN", "Pagerank", or "Leiden").
+        classify_method (str): Classification method ("knn" or "llm").
+        filtered_image_entity_list (list): Filtered image entity list, each entity contains "entity_name" and "description".
+        nearby_text_entity_list (list): Nearby text entity list, each entity contains "entity_name", "entity_type" and "description".
+        nearby_relationship_list (list): Relationship list between entities, each relationship contains "src_id", "tgt_id", "weight" and "description".
 
     Returns:
-        image_entity_with_labels (list): 图像实体及其对应类别的列表，每项为 {"entity_name": ..., "label": ..., "description": ..., "entity_type": ...}。
-        text_clustering_results (list): 聚类后的文本实体列表，每项为 {"label": ..., "entities": [...]}。
+        image_entity_with_labels (list): List of image entities with corresponding categories, each item is {"entity_name": ..., "label": ..., "description": ..., "entity_type": ...}.
+        text_clustering_results (list): Clustered text entity list, each item is {"label": ..., "entities": [...]}.
     """
-    # Step 0: 排序关系列表，根据权重降序
+    # Step 0: Sort relationship list by weight in descending order
     nearby_relationship_list = sorted(nearby_relationship_list, key=lambda x: x['weight'], reverse=True)
 
-    # Step 1: 获取文本实体描述的嵌入
+    # Step 1: Get embeddings of text entity descriptions
     descriptions = [entity["description"] for entity in nearby_text_entity_list]
     entity_names = [entity["entity_name"] for entity in nearby_text_entity_list]
     embeddings = encode(descriptions)
 
-    # Step 2: spectral聚类
-    # 计算相似度矩阵（余弦相似度）
+    # Step 2: Spectral clustering
+    # Compute similarity matrix (cosine similarity)
     similarity_matrix = cosine_similarity(embeddings)
 
-    # 根据关系权重修改度矩阵
+    # Modify degree matrix based on relationship weights
     for relation in nearby_relationship_list:
-        # 只有当 src_id 和 tgt_id 都在 entity_names 中时才执行
+        # Only execute when both src_id and tgt_id are in entity_names
         if relation["src_id"] in entity_names and relation["tgt_id"] in entity_names:
             src_idx = entity_names.index(relation["src_id"])
             tgt_idx = entity_names.index(relation["tgt_id"])
@@ -315,44 +315,44 @@ def get_possible_entities_text_clustering(
 
         weight = relation["weight"]
         similarity_matrix[src_idx, tgt_idx] *= weight
-        similarity_matrix[tgt_idx, src_idx] *= weight  # 确保邻接矩阵是对称的
+        similarity_matrix[tgt_idx, src_idx] *= weight  # Ensure adjacency matrix is symmetric
     
-    # 计算度矩阵
+    # Compute degree matrix
     degree_matrix = np.zeros_like(similarity_matrix)
     for i in range(len(similarity_matrix)):
         degree_matrix[i, i] = np.sum(similarity_matrix[i, :])
 
-    # 计算拉普拉斯矩阵 L = D - A
+    # Compute Laplacian matrix L = D - A
     laplacian_matrix = degree_matrix - similarity_matrix
 
-    # 计算拉普拉斯矩阵的特征值和特征向量
+    # Compute eigenvalues and eigenvectors of Laplacian matrix
     eigvals, eigvecs = np.linalg.eig(laplacian_matrix)
 
-    # 选择前k个最小的特征值对应的特征向量
+    # Select eigenvectors corresponding to the k smallest eigenvalues
     k = max(2, math.ceil(math.sqrt(len(nearby_text_entity_list))))
     eigvecs_selected = eigvecs[:, np.argsort(eigvals)[:k]]
-    # 前面拉普拉斯矩阵可能出现非实对称矩阵的情况导致出现复数，所以这里加一步取模值
+    # The Laplacian matrix may result in non-real symmetric matrix producing complex numbers, so take absolute value
     eigvecs_selected = np.abs(eigvecs_selected)
 
-    # 使用 DBSCAN 聚类
+    # Use DBSCAN clustering
     min_samples = max(1, math.ceil(len(nearby_text_entity_list) / 10))
-    dbscan = DBSCAN(eps=0.5, min_samples=min_samples)  # 调整 eps 和 min_samples 参数
+    dbscan = DBSCAN(eps=0.5, min_samples=min_samples)  # Adjust eps and min_samples parameters
     dbscan_labels = dbscan.fit_predict(eigvecs_selected)
 
-    # 输出每个节点的聚类标签
+    # Output clustering label for each node
     labels = dbscan_labels
 
-    # 创建一个字典，初始化所有实体标签为 -1，表示未分类
+    # Create a dictionary, initialize all entity labels to -1, indicating unclassified
     entity_labels = {entity["entity_name"]: -1 for entity in nearby_text_entity_list}
 
-    # 按照聚类结果分配标签
+    # Assign labels according to clustering results
     for idx, entity in enumerate(nearby_text_entity_list):
         entity_labels[entity["entity_name"]] = labels[idx]
 
-    # 按照 nearby_text_entity_list 的顺序输出 labels
+    # Output labels in the order of nearby_text_entity_list
     labels = [entity_labels[entity["entity_name"]] for entity in nearby_text_entity_list]
 
-    # Step 3: 分类图像实体到聚类类别
+    # Step 3: Classify image entities into clustering categories
     image_entity_with_labels = []
     input_embeddings = encode([entity["description"] for entity in filtered_image_entity_list])
     nn = NearestNeighbors(n_neighbors=1, metric="cosine").fit(embeddings)
@@ -366,7 +366,7 @@ def get_possible_entities_text_clustering(
             "entity_type": image_entity.get("entity_type", "image")
         })
     
-    # Step 4: 生成聚类结果
+    # Step 4: Generate clustering results
     text_clustering_results = []
     for label in set(labels):
         text_clustering_results.append({
@@ -386,22 +386,22 @@ def get_possible_entities_text_clustering(
 
 def judge_text_entity_alignment_clustering(image_entity_with_labels, text_clustering_results):
     """
-    使用 LLM 判断是否需要融合实体，并输出融合结果。
+    Use LLM to determine whether entity fusion is needed and output fusion results.
 
     Parameters:
-        image_entity_with_labels (list): 图像实体及其对应类别的列表，每项为 {"entity_name": ..., "label": ..., "description": ..., "entity_type": ...}。
-        text_clustering_results (list): 聚类后的文本实体列表，每项为 {"label": ..., "entities": [...]}。
+        image_entity_with_labels (list): List of image entities with corresponding categories, each item is {"entity_name": ..., "label": ..., "description": ..., "entity_type": ...}.
+        text_clustering_results (list): Clustered text entity list, each item is {"label": ..., "entities": [...]}.
 
     Returns:
-        merged_entities (list): 融合的实体列表，每项为 {
+        merged_entities (list): Fused entity list, each item is {
             "entity_name": ..., 
             "entity_type": ..., 
             "description": ..., 
             "source_image_entities": [...], 
             "source_text_entities": [...]
-        }。
+        }.
     """
-    # 构建融合任务的上下文
+    # Build context for fusion task
     clusters_info = []
     for cluster in text_clustering_results:
         clusters_info.append({
@@ -416,7 +416,7 @@ def judge_text_entity_alignment_clustering(image_entity_with_labels, text_cluste
             ]
         })
 
-    # 构建输入 prompt
+    # Build input prompt
     prompt_user = f"""
 You are tasked with aligning image entities and text entities based on their labels and descriptions. Below are the clusters and the entities they contain.
 
@@ -455,7 +455,7 @@ Include only one JSON list as the output, strictly following the structure above
 """
     prompt_system = """You are an AI assistant skilled in aligning entities based on semantic descriptions and cluster information. Use the provided instructions to merge entities accurately."""
 
-    # 调用 LLM 获取融合结果
+    # Call LLM to get fusion results
     merged_entities = get_llm_response(cur_prompt=prompt_user, system_content=prompt_system)
     normalized_merged_entities = normalize_to_json_list(merged_entities)
     return [
@@ -467,32 +467,32 @@ def extract_image_entities(img_entity_name):
     global_config_path = os.path.join(cache_path,"global_config.csv")
     global_config = read_config_to_dict(global_config_path)
     working_dir = global_config['working_dir']
-    # 构建 GraphML 文件路径
+    # Build GraphML file path
     image_knowledge_graph_path = os.path.join(working_dir, f"images/{img_entity_name}/graph_{img_entity_name}_entity_relation.graphml")
     
-    # 检查文件是否存在
+    # Check if file exists
     if not os.path.exists(image_knowledge_graph_path):
         print(f"GraphML file not found: {image_knowledge_graph_path}")
         return
 
-    # 解析 GraphML 文件
+    # Parse GraphML file
     tree = ET.parse(image_knowledge_graph_path)
     root = tree.getroot()
     image_entities = []
-    # 定义命名空间
+    # Define namespace
     namespace = {'graphml': 'http://graphml.graphdrawing.org/xmlns'}
-    # 遍历所有 'node' 元素
+    # Traverse all 'node' elements
     for node in root.findall('graphml:graph/graphml:node', namespace):
-        # 提取实体信息
+        # Extract entity information
         entity_name = node.get('id').strip('"')
         for data in node.findall('graphml:data', namespace):
-            if data.get('key') == 'd0':  # 'd0' 对应实体类型
-                entity_type = data.text.strip('"')  # 获取实体类型并去掉引号
+            if data.get('key') == 'd0':  # 'd0' corresponds to entity type
+                entity_type = data.text.strip('"')  # Get entity type and remove quotes
         for data in node.findall('graphml:data', namespace):
-            if data.get('key') == 'd1':  # 'd1' 对应描述
-                description = data.text.strip('"')  # 获取描述并去掉引号
+            if data.get('key') == 'd1':  # 'd1' corresponds to description
+                description = data.text.strip('"')  # Get description and remove quotes
 
-        # 准备节点数据
+        # Prepare node data
         node_data = {
             "entity_name": entity_name,
             "entity_type": entity_type,
@@ -507,9 +507,9 @@ def enhance_image_entities(enhanced_image_entity_list, nearby_chunks):
     return normalize_to_json_list(enhanced_image_entities)
 
 def ensure_quoted(entity_name):
-    # 检查字符串是否以双引号开始和结束
+    # Check if string starts and ends with double quotes
     if not (entity_name.startswith('"') and entity_name.endswith('"')):
-        # 如果没有双引号，则加上双引号
+        # If no double quotes, add them
         entity_name = f'"{entity_name}"'
     return entity_name
 
@@ -710,89 +710,89 @@ def merge_graphs(image_graph_path, graph_path, aligned_text_entity_list, image_e
     working_dir = global_config['working_dir']
     merged_kg_path = os.path.join(working_dir, f'graph_merged_{image_entity_name}.graphml')
 
-    # 步骤 1: 加载图像和文本知识图谱
+    # Step 1: Load image and text knowledge graphs
     image_graph = nx.read_graphml(image_graph_path)
     text_graph = nx.read_graphml(graph_path)
     
-    # 如果图谱加载失败，打印错误并返回
+    # If graph loading fails, print error and return
     if image_graph is None or text_graph is None:
-        print(f"加载图谱失败，请检查文件路径。")
+        print(f"Failed to load graphs, please check file paths.")
         return
     
-    # 步骤 2: 合并两个图
-    # 使用nx.compose将两个图谱的节点和边合并
+    # Step 2: Merge two graphs
+    # Use nx.compose to merge nodes and edges of two graphs
     merged_graph = nx.compose(image_graph, text_graph)
-    # 步骤 3: 遍历对齐的实体列表，进行融合
+    # Step 3: Traverse aligned entity list for fusion
     for entity_info in aligned_text_entity_list:
-        # 检查结果是否有问题，如果存在缺失的字段，则跳过该实体
+        # Check if result has issues, if missing fields exist, skip this entity
         if not all(key in entity_info for key in ['entity_name', 'entity_type', 'description', 'source_image_entities', 'source_text_entities']):
             continue 
-        entity_name = entity_info['entity_name']  # 融合后的实体名称
-        entity_type = entity_info['entity_type']  # 融合后的实体类型
-        description = entity_info['description']  # 融合后的实体描述
+        entity_name = entity_info['entity_name']  # Fused entity name
+        entity_type = entity_info['entity_type']  # Fused entity type
+        description = entity_info['description']  # Fused entity description
         
-        # 获取图像和文本实体对应的节点
+        # Get nodes corresponding to image and text entities
         source_image_entities = entity_info['source_image_entities']
         source_text_entities = entity_info['source_text_entities']
         
-        # 获取图像和文本图谱中的source_id时，确保去掉引号
+        # When getting source_id from image and text graphs, ensure quotes are removed
         source_image_entity = ensure_quoted(source_image_entities[0])
         source_text_entity = ensure_quoted(source_text_entities[0])
         
-        # 确保图中存在这些节点
+        # Ensure these nodes exist in the graph
         if source_image_entity in image_graph.nodes:
             source_id_image = image_graph.nodes[source_image_entity].get('source_id', '')
         else:
-            print(f"节点 {source_image_entity} 在图像图谱中不存在")
+            print(f"Node {source_image_entity} does not exist in image graph")
             continue
 
         if source_text_entity in text_graph.nodes:
             source_id_text = text_graph.nodes[source_text_entity].get('source_id', '')
         else:
-            print(f"节点 {source_text_entity} 在文本图谱中不存在")
+            print(f"Node {source_text_entity} does not exist in text graph")
             continue
-        # 将两个source_id连接起来
+        # Connect two source_ids together
         source_id = GRAPH_FIELD_SEP.join([source_id_image, source_id_text])
 
-        # 步骤 4: 融合节点
-        # 假设 source_image_entities[0] 是目标节点，将所有其他实体连接到该节点
+        # Step 4: Fuse nodes
+        # Assume source_image_entities[0] is the target node, connect all other entities to this node
         target_entity = ensure_quoted(source_image_entities[0])
 
-        # 合并 source_image_entities 和 source_text_entities 中的所有实体
+        # Merge all entities in source_image_entities and source_text_entities
         all_entities = source_image_entities + source_text_entities
 
-        # 确保去掉重复的实体
-        all_entities = list(set(all_entities))  # 去重
+        # Ensure duplicate entities are removed
+        all_entities = list(set(all_entities))  # Remove duplicates
 
-        # 先遍历所有实体，将它们与目标实体连接
+        # First traverse all entities, connecting them with the target entity
         for entity in all_entities:
             entity = ensure_quoted(entity)
             if entity != target_entity and entity in merged_graph.nodes: 
-                neighbors = list(merged_graph.neighbors(entity))  # 获取当前实体的邻居
+                neighbors = list(merged_graph.neighbors(entity))  # Get neighbors of current entity
                 for neighbor in neighbors:
                     if not merged_graph.has_edge(target_entity, neighbor):
-                        merged_graph.add_edge(target_entity, neighbor)  # 将邻居与目标实体连接
-                    # 将边的属性合并到目标节点的边
+                        merged_graph.add_edge(target_entity, neighbor)  # Connect neighbor with target entity
+                    # Merge edge attributes to target node's edges
                     edge_data = merged_graph.get_edge_data(entity, neighbor)
                     target_edge_data = merged_graph.get_edge_data(target_entity, neighbor)
                     
-                    # 合并边的属性（传递所有属性，如 weight、description、source_id 和 order）
+                    # Merge edge attributes (pass all attributes such as weight, description, source_id and order)
                     if target_edge_data:
-                        # 如果边已经存在，合并现有的属性
+                        # If edge already exists, merge existing attributes
                         for key in edge_data:
                             if key in ['weight', 'description', 'source_id', 'order']:
-                                # 合并边的属性，如果已有就添加新值，或者保持已有的
+                                # Merge edge attributes, add new value if exists, or keep existing one
                                 target_edge_data[key] = edge_data.get(key, target_edge_data.get(key))
                     else:
-                        # 如果边不存在，就添加新的边属性
+                        # If edge doesn't exist, add new edge attributes
                         merged_graph[target_entity][neighbor].update(edge_data)
 
-                merged_graph.remove_node(entity)  # 删除已经合并的实体节点
+                merged_graph.remove_node(entity)  # Remove already merged entity node
         
-        # 在更新之前，检查目标节点是否存在，如果不存在则创建
+        # Before updating, check if target node exists, create it if not
         if target_entity not in merged_graph.nodes:
             merged_graph.add_node(target_entity)
-        # 修改目标节点的属性
+        # Modify target node attributes
         merged_graph.nodes[target_entity].update({
             'entity_type': entity_type,
             'description': description,
@@ -800,10 +800,10 @@ def merge_graphs(image_graph_path, graph_path, aligned_text_entity_list, image_e
         })
         merged_graph = nx.relabel_nodes(merged_graph, {target_entity: ensure_quoted(entity_name)})
     
-    # 步骤 5: 保存合并后的图谱
-    # 使用NetworkX将合并后的图保存到指定路径
+    # Step 5: Save merged graph
+    # Use NetworkX to save merged graph to specified path
     nx.write_graphml(merged_graph, merged_kg_path)
-    logger.info(f"合并后的知识图谱已保存到: {merged_kg_path}")
+    logger.info(f"Merged knowledge graph saved to: {merged_kg_path}")
     return merged_kg_path
 
 async def fusion(img_ids):
