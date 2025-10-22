@@ -28,6 +28,30 @@ def retry_on_rate_limit(max_retries=3, delay=60):
         return wrapper
     return decorator
 
+import functools
+import asyncio
+
+def func_logger(func):
+    if asyncio.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            print(f"Calling async function: {func.__name__}")
+            print(f"Arguments: args={args}, kwargs={kwargs}")
+            result = await func(*args, **kwargs)
+            print(f"Function {func.__name__} returned: {result}")
+            return result
+        return async_wrapper
+    else:
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            print(f"Calling function: {func.__name__}")
+            print(f"Arguments: args={args}, kwargs={kwargs}")
+            result = func(*args, **kwargs)
+            print(f"Function {func.__name__} returned: {result}")
+            return result
+        return sync_wrapper
+
+
 @wrap_embedding_func_with_attrs(
     embedding_dim=EMBED_MODEL.get_sentence_embedding_dimension(),
     max_token_size=EMBED_MODEL.max_seq_length,
@@ -36,6 +60,7 @@ def retry_on_rate_limit(max_retries=3, delay=60):
 async def local_embedding(texts: list[str]) -> np.ndarray:
     return encode(texts)
 
+# @func_logger
 async def model_if_cache(
     prompt, system_prompt=None, history_messages=[], **kwargs
 ) -> str:
@@ -68,6 +93,7 @@ async def model_if_cache(
         await hashing_kv.index_done_callback()
     return response.choices[0].message.content
 
+# @func_logger
 async def multimodel_if_cache(
     user_prompt, img_base, system_prompt, history_messages=[], **kwargs
 ) -> str:
@@ -168,7 +194,7 @@ def normalize_to_json_list(output):
         return []
 
 # Use LLM to answer
-@retry_on_rate_limit()
+# @func_logger
 def get_llm_response(cur_prompt, system_content):
     client = OpenAI(
         base_url=URL, api_key=API_KEY
@@ -189,6 +215,7 @@ def get_llm_response(cur_prompt, system_content):
     return response
 
 # Call multimodal LLM
+# @func_logger
 def get_mmllm_response(cur_prompt, system_content, img_base):
     client = OpenAI(
         base_url=MM_URL, api_key=MM_API_KEY
