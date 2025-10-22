@@ -1,15 +1,31 @@
+from common_logger import get_logger
+
+logger = get_logger(__name__)
 import asyncio
+
 import os
 import json
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from base import logger
+
+logger.debug("Loading mmgraphrag module 1...")
+
 from parameter import cache_path
+
+logger.debug("Parameter loaded")
+
 if not os.path.exists(cache_path):
     os.makedirs(cache_path)
-os.environ['CACHE_PATH'] = cache_path
+os.environ["CACHE_PATH"] = cache_path
+
+logger.debug("Cache set.")
 from llm import model_if_cache
+logger.debug("llm loaded")
 from parameter import QueryParam
+logger.debug("QueryParam loaded")
+
+
+
 
 # Return type is asyncio.AbstractEventLoop, the event loop object. Ensures that a valid event loop is returned regardless of whether one already exists in the current environment.
 def always_get_an_event_loop() -> asyncio.AbstractEventLoop:
@@ -22,6 +38,7 @@ def always_get_an_event_loop() -> asyncio.AbstractEventLoop:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop
+
 
 @dataclass
 class MMGraphRAG:
@@ -78,25 +95,25 @@ class MMGraphRAG:
         logger.debug(f"GraphRAG init with param:\n\n  {_print_config}\n")
         global_config = asdict(self)
 
-        global_config_path = os.path.join(cache_path,"global_config.csv")
+        global_config_path = os.path.join(cache_path, "global_config.csv")
         # Save global_config dictionary to CSV file
-        with open(global_config_path, 'w', newline='') as file:
+        with open(global_config_path, "w", newline="") as file:
             for key, value in global_config.items():
                 file.write(f"{key},{value}\n")
-        
+
         # Ensure working directory exists, create if it doesn't
         if os.path.exists(self.working_dir):
             logger.info(f"Using existing working directory {self.working_dir}")
         else:
             os.makedirs(self.working_dir)
             logger.info(f"Creating working directory {self.working_dir}")
-        
+
         from preprocessing import chunking_func
         from pdf_preprocessing import chunking_func_pdf
         from pdf2md_preprocessing import chunking_func_pdf2md
         from text2graph import extract_entities_from_text
         from query import local_query
-        
+
         # Instantiate classes
         if self.query_mode:
             self.localquery = local_query()
@@ -105,7 +122,7 @@ class MMGraphRAG:
             self.ChunkingFunc_pdf = chunking_func_pdf()
             self.ChunkingFunc_pdf2md = chunking_func_pdf2md()
             self.ExtractEntitiesFromText = extract_entities_from_text()
-    
+
     def query(self, query: str, param: QueryParam = QueryParam()):
         loop = always_get_an_event_loop()
         return loop.run_until_complete(self.aquery(query, param))
@@ -120,9 +137,10 @@ class MMGraphRAG:
     def index(self, path):
         loop = always_get_an_event_loop()
         return loop.run_until_complete(self.aindex(path))
-        
-    async def aindex(self,path):
+
+    async def aindex(self, path):
         from img2graph import img2graph
+
         if self.input_mode == 0:
             await self.ChunkingFunc.extract_text_and_images(path)
         elif self.input_mode == 1:
@@ -135,27 +153,32 @@ class MMGraphRAG:
                     content = json.load(file)
                     # Check if JSON file is empty {}
                     if content == {}:
-                        logger.info(f"{kv_store_path} exists but is empty. Proceeding with preprocess.")
+                        logger.info(
+                            f"{kv_store_path} exists but is empty. Proceeding with preprocess."
+                        )
                         await self.ChunkingFunc_pdf2md.extract_text_and_images(path)
                     else:
-                        logger.info(f"{kv_store_path} exists and is not empty. Skipping preprocess.")
+                        logger.info(
+                            f"{kv_store_path} exists and is not empty. Skipping preprocess."
+                        )
             else:
                 await self.ChunkingFunc_pdf2md.extract_text_and_images(path)
-        filepath = os.path.join(self.working_dir, 'kv_store_text_chunks.json')
-        with open(filepath, 'r') as file:
+        filepath = os.path.join(self.working_dir, "kv_store_text_chunks.json")
+        with open(filepath, "r") as file:
             chunks = json.load(file)
         await self.ExtractEntitiesFromText.text_entity_extraction(chunks)
-        imgfolderpath = os.path.join(self.working_dir, 'images')
+        imgfolderpath = os.path.join(self.working_dir, "images")
         await img2graph(imgfolderpath)
-        filepath2 = os.path.join(self.working_dir, 'kv_store_image_data.json')
-        with open(filepath2, 'r') as file:
+        filepath2 = os.path.join(self.working_dir, "kv_store_image_data.json")
+        with open(filepath2, "r") as file:
             image_data = json.load(file)
         from fusion import fusion, create_EntityVDB
+
         # Check if image_data is an empty dictionary
         if image_data:
             img_ids = list(image_data.keys())
             await fusion(img_ids)
         else:
-            print("No images extracted, skipping fusion operation")
+            logger.info("No images extracted, skipping fusion operation")
             createvdb = create_EntityVDB()
             await createvdb.create_vdb()

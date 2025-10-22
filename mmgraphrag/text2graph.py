@@ -417,10 +417,8 @@ async def extract_entities(
         now_ticks = PROMPTS["process_tickers"][
             already_processed % len(PROMPTS["process_tickers"])
         ]
-        print(
-            f"{now_ticks} Processed {already_processed} chunks, {already_entities} entities(duplicated), {already_relations} relations(duplicated)\r",
-            end="",
-            flush=True,
+        logger.info(
+            f"{now_ticks} Processed {already_processed} chunks, {already_entities} entities(duplicated), {already_relations} relations(duplicated)"
         )
         # Store results for this text chunk
         # Store results for this text chunk
@@ -431,7 +429,6 @@ async def extract_entities(
     results = await asyncio.gather(
         *[_process_single_content(c) for c in ordered_chunks]
     )
-    print()  # clear the progress bar
     # Save knowledge graph information as JSON file
     with open(output_json_path, 'w', encoding='utf-8') as json_file:
         json.dump(chunk_knowledge_graph_info, json_file, ensure_ascii=False, indent=4)

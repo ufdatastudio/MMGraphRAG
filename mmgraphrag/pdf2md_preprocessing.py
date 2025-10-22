@@ -254,7 +254,7 @@ def compress_image_to_size(input_image, output_image_path, target_size_mb=5, ste
     if os.path.getsize(output_image_path) <= target_size_bytes:
         return True
     else:
-        print("Unable to compress the image to within the target size, please adjust the initial quality or step in preprocessing.py.")
+        logger.warning("Unable to compress the image to within the target size, please adjust the initial quality or step in preprocessing.py.")
         return False
 
 def clear_images_in_md(content):
@@ -285,12 +285,12 @@ def image_move_remove(json_path, target_folder, folder_path):
                 # Check if original_img_path is a file not a directory
                 if os.path.isfile(original_img_path):
                     shutil.copy(original_img_path, new_img_path)
-                    print(f"Copied {original_img_path} to {new_img_path}")
+                    logger.debug(f"Copied {original_img_path} to {new_img_path}")
                     img_counter += 1  # Increment counter
                 else:
-                    print(f"Skipped {original_img_path}, because it is a directory.")
+                    logger.debug(f"Skipped {original_img_path}, because it is a directory.")
             except FileNotFoundError:
-                print(f"Image not found: {original_img_path}")
+                logger.warning(f"Image not found: {original_img_path}")
 
 def get_content_list_json_file(folder_path):
     # Traverse files in the specified folder
@@ -338,15 +338,15 @@ def pdf2markdown(pdf_path, output_dir):
         # os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
         # env_name = "MinerU"
         # command = ["conda", "run", "-n", env_name, 'magic-pdf', '-p', pdf_path, '-o', output_dir]
-        command = ['magic-pdf', '-p', pdf_path, '-o', output_dir]
+        command = ['mineru', '-p', pdf_path, '-o', output_dir]
         subprocess.run(
             command,
             capture_output=True, text=True, check=True
         )
         logger.info(f"MinerU finished!")
     except subprocess.CalledProcessError as e:
-        # If command execution fails, print error message
-        print("Error:", e.stderr)
+        # If command execution fails, log error message
+        logger.error("Error: %s", e.stderr)
     return output_folder
 
 async def extract_text_and_images_with_chunks(pdf_path, output_dir, context_length):

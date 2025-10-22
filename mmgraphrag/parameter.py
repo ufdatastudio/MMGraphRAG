@@ -1,9 +1,16 @@
+from common_logger import get_logger
+logger = get_logger(__name__)
 from dataclasses import dataclass
+
+logger.debug("Importing SentenceTransformer...")
 from sentence_transformers import SentenceTransformer
+logger.debug("SentenceTransformer imported.")
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger.debug("Environment variables loaded.")
 
 @dataclass
 class QueryParam:
@@ -14,11 +21,16 @@ class QueryParam:
     # alpha: int = 0.5
     number_of_mmentities: int = 3
 
+
 cache_path = './cache'
 
-embedding_model_dir = './cache/all-MiniLM-L6-v2'
-# EMBED_MODEL = SentenceTransformer(embedding_model_dir, device="cpu")
-EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+logger.debug("Setting up embedding model...")
+
+embedding_model_dir = 'cache/all-MiniLM-L6-v2/sentence-transformers/all-MiniLM-L6-v2'
+logger.debug("Loading embedding model...")
+EMBED_MODEL = SentenceTransformer(embedding_model_dir, device="cpu")
+# EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+logger.debug("Embedding model loaded.")
 # EMBED_MODEL = SentenceTransformer(embedding_model_dir, trust_remote_code=True, device="cuda:0")
 
 def encode(content):
@@ -47,4 +59,4 @@ if not API_KEY:
 if not MM_API_KEY:
     raise EnvironmentError("Missing required environment variable: MM_API_KEY")
 
-print("Configuration loaded successfully.")
+logger.info("Configuration loaded successfully.")

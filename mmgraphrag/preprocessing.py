@@ -293,7 +293,7 @@ def compress_image_to_size(input_image, output_image_path, target_size_mb=5, ste
     if os.path.getsize(output_image_path) <= target_size_bytes:
         return True
     else:
-        print("Unable to compress image to within target size, please adjust initial quality or step size in preprocessing.py.")
+        logger.warning("Unable to compress image to within target size, please adjust initial quality or step size in preprocessing.py.")
         return False
 
 async def extract_text_and_images_with_chunks(docx_path, output_dir,context_length):

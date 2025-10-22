@@ -12,6 +12,9 @@ from storage import (
 import time
 import functools
 from openai import RateLimitError
+from common_logger import get_logger
+
+logger = get_logger(__name__)
 
 def retry_on_rate_limit(max_retries=3, delay=60):
     def decorator(func):
@@ -23,7 +26,7 @@ def retry_on_rate_limit(max_retries=3, delay=60):
                 except RateLimitError as e:
                     if attempt == max_retries:
                         raise
-                    print(f"Rate limit hit. Retry {attempt}/{max_retries} in {delay} seconds...")
+                    logger.warning(f"Rate limit hit. Retry {attempt}/{max_retries} in {delay} seconds...")
                     time.sleep(delay)
         return wrapper
     return decorator
@@ -35,19 +38,19 @@ def func_logger(func):
     if asyncio.iscoroutinefunction(func):
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            print(f"Calling async function: {func.__name__}")
-            print(f"Arguments: args={args}, kwargs={kwargs}")
+            logger.debug(f"Calling async function: {func.__name__}")
+            logger.debug(f"Arguments: args={args}, kwargs={kwargs}")
             result = await func(*args, **kwargs)
-            print(f"Function {func.__name__} returned: {result}")
+            logger.debug(f"Function {func.__name__} returned: {result}")
             return result
         return async_wrapper
     else:
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            print(f"Calling function: {func.__name__}")
-            print(f"Arguments: args={args}, kwargs={kwargs}")
+            logger.debug(f"Calling function: {func.__name__}")
+            logger.debug(f"Arguments: args={args}, kwargs={kwargs}")
             result = func(*args, **kwargs)
-            print(f"Function {func.__name__} returned: {result}")
+            logger.debug(f"Function {func.__name__} returned: {result}")
             return result
         return sync_wrapper
 
@@ -149,10 +152,10 @@ def normalize_to_json(output):
             json_obj = json.loads(json_str)
             return json_obj  # Return normalized JSON object
         except json.JSONDecodeError as e:
-            print(f"JSON decoding failed: {e}")
+            logger.warning(f"JSON decoding failed: {e}")
             return None
     else:
-        print("No valid JSON part found")
+        logger.warning("No valid JSON part found")
         return None
 
 def normalize_to_json_list(output):
@@ -180,17 +183,17 @@ def normalize_to_json_list(output):
                 return json_obj
         except json.JSONDecodeError:
             # If complete parsing fails, try item-by-item parsing
-            print("Complete parsing failed, attempting item-by-item parsing...")
+            logger.warning("Complete parsing failed, attempting item-by-item parsing...")
             items = []
             for partial_match in re.finditer(r"\{.*?\}", json_str, re.DOTALL):
                 try:
                     item = json.loads(partial_match.group(0))
                     items.append(item)
                 except json.JSONDecodeError:
-                    print("Skipping invalid JSON fragment")
+                    logger.debug("Skipping invalid JSON fragment")
             return items if items else []
     else:
-        print("No valid JSON fragment found")
+        logger.warning("No valid JSON fragment found")
         return []
 
 # Use LLM to answer
