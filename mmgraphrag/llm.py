@@ -9,6 +9,52 @@ from storage import (
     BaseKVStorage,
 )
 
+import time
+import functools
+from openai import RateLimitError
+from common_logger import get_logger
+
+logger = get_logger(__name__)
+
+def retry_on_rate_limit(max_retries=3, delay=60):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(1, max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except RateLimitError as e:
+                    if attempt == max_retries:
+                        raise
+                    logger.warning(f"Rate limit hit. Retry {attempt}/{max_retries} in {delay} seconds...")
+                    time.sleep(delay)
+        return wrapper
+    return decorator
+
+import functools
+import asyncio
+
+def func_logger(func):
+    if asyncio.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            logger.debug(f"Calling async function: {func.__name__}")
+            logger.debug(f"Arguments: args={args}, kwargs={kwargs}")
+            result = await func(*args, **kwargs)
+            logger.debug(f"Function {func.__name__} returned: {result}")
+            return result
+        return async_wrapper
+    else:
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            logger.debug(f"Calling function: {func.__name__}")
+            logger.debug(f"Arguments: args={args}, kwargs={kwargs}")
+            result = func(*args, **kwargs)
+            logger.debug(f"Function {func.__name__} returned: {result}")
+            return result
+        return sync_wrapper
+
+
 @wrap_embedding_func_with_attrs(
     embedding_dim=EMBED_MODEL.get_sentence_embedding_dimension(),
     max_token_size=EMBED_MODEL.max_seq_length,
@@ -17,6 +63,7 @@ from storage import (
 async def local_embedding(texts: list[str]) -> np.ndarray:
     return encode(texts)
 
+# @func_logger
 async def model_if_cache(
     prompt, system_prompt=None, history_messages=[], **kwargs
 ) -> str:
@@ -30,7 +77,7 @@ async def model_if_cache(
     hashing_kv: BaseKVStorage = kwargs.pop("hashing_kv", None)
     messages.extend(history_messages)
     messages.append({"role": "user", "content": prompt})
-    # 如果缓存对象存在，计算当前请求的哈希值，尝试从缓存中获取结果
+    # If cache object exists, calculate hash of current request and try to get result from cache
     if hashing_kv is not None:
         args_hash = compute_args_hash(MODEL, messages)
         if_cache_return = await hashing_kv.get_by_id(args_hash)
@@ -41,7 +88,7 @@ async def model_if_cache(
         model=MODEL, messages=messages, **kwargs
     )
 
-    # 如果有缓存对象，将响应结果存入缓存
+    # If cache object exists, store response result in cache
     if hashing_kv is not None:
         await hashing_kv.upsert(
             {args_hash: {"return": response.choices[0].message.content, "model": MODEL}}
@@ -49,6 +96,7 @@ async def model_if_cache(
         await hashing_kv.index_done_callback()
     return response.choices[0].message.content
 
+# @func_logger
 async def multimodel_if_cache(
     user_prompt, img_base, system_prompt, history_messages=[], **kwargs
 ) -> str:
@@ -74,7 +122,7 @@ async def multimodel_if_cache(
             "text": user_prompt
           }
         ]})
-    # 如果缓存对象存在，计算当前请求的哈希值，尝试从缓存中获取结果
+    # If cache object exists, calculate hash of current request and try to get result from cache
     if hashing_kv is not None:
         args_hash = compute_args_hash(MM_MODEL, messages)
         if_cache_return = await hashing_kv.get_by_id(args_hash)
@@ -85,7 +133,7 @@ async def multimodel_if_cache(
         model=MM_MODEL, messages=messages, **kwargs
     )
 
-    # 如果有缓存对象，将响应结果存入缓存
+    # If cache object exists, store response result in cache
     if hashing_kv is not None:
         await hashing_kv.upsert(
             {args_hash: {"return": response.choices[0].message.content, "model": MM_MODEL}}
@@ -93,62 +141,63 @@ async def multimodel_if_cache(
         await hashing_kv.index_done_callback()
     return response.choices[0].message.content
 
-# 正则化处理函数
+# Normalization processing function
 def normalize_to_json(output):
-    # 使用正则提取JSON部分
+    # Use regex to extract JSON part
     match = re.search(r"\{.*\}", output, re.DOTALL)
     if match:
         json_str = match.group(0)
         try:
-            # 验证JSON格式是否正确
+            # Validate JSON format
             json_obj = json.loads(json_str)
-            return json_obj  # 返回标准化的JSON对象
+            return json_obj  # Return normalized JSON object
         except json.JSONDecodeError as e:
-            print(f"JSON解码失败: {e}")
+            logger.warning(f"JSON decoding failed: {e}")
             return None
     else:
-        print("未找到有效的JSON部分")
+        logger.warning("No valid JSON part found")
         return None
 
 def normalize_to_json_list(output):
     """
-    提取并验证JSON列表格式的字符串，返回解析后的JSON对象列表。
-    即使JSON不完整，也尝试提取尽可能多的内容。
+    Extract and validate JSON list format string, returning parsed JSON object list.
+    Attempts to extract as much content as possible even if JSON is incomplete.
     """
-    # 去除转义符和多余空白符
+    # Remove escape characters and extra whitespace
     cleaned_output = output.replace('\\"', '"').strip()
     
-    # 使用宽松的正则表达式提取可能的JSON片段
+    # Use lenient regex to extract possible JSON fragments
     match = re.search(r"\[\s*(\{.*?\})*?\s*]", cleaned_output, re.DOTALL)
     
     if match:
         json_str = match.group(0)
         
-        # 移除多余逗号（可能由于截断导致多余逗号）
+        # Remove extra commas (possibly caused by truncation)
         json_str = re.sub(r",\s*]", "]", json_str)
         json_str = re.sub(r",\s*}$", "}", json_str)
 
         try:
-            # 尝试完整解析
+            # Try complete parsing
             json_obj = json.loads(json_str)
             if isinstance(json_obj, list):
                 return json_obj
         except json.JSONDecodeError:
-            # 如果完整解析失败，尝试逐项解析
-            print("完整解析失败，尝试逐项解析...")
+            # If complete parsing fails, try item-by-item parsing
+            logger.warning("Complete parsing failed, attempting item-by-item parsing...")
             items = []
             for partial_match in re.finditer(r"\{.*?\}", json_str, re.DOTALL):
                 try:
                     item = json.loads(partial_match.group(0))
                     items.append(item)
                 except json.JSONDecodeError:
-                    print("跳过无效的JSON片段")
+                    logger.debug("Skipping invalid JSON fragment")
             return items if items else []
     else:
-        print("未找到有效的JSON片段")
+        logger.warning("No valid JSON fragment found")
         return []
 
-# 用LLM进行回答
+# Use LLM to answer
+# @func_logger
 def get_llm_response(cur_prompt, system_content):
     client = OpenAI(
         base_url=URL, api_key=API_KEY
@@ -168,7 +217,8 @@ def get_llm_response(cur_prompt, system_content):
     response = completion.choices[0].message.content
     return response
 
-# 调用多模态LLM
+# Call multimodal LLM
+# @func_logger
 def get_mmllm_response(cur_prompt, system_content, img_base):
     client = OpenAI(
         base_url=MM_URL, api_key=MM_API_KEY
